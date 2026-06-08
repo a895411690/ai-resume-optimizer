@@ -1,280 +1,715 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Separator } from "@/components/ui/separator";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import {
-  Wand2, Target, GitCompare, Stethoscope, Download, Trash2, Eye, Edit3, LogOut,
-  Loader2, FileText, Sparkles, Monitor,
-} from "lucide-react";
+import { ChangeEvent, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { supabase } from "@/lib/supabase";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Download,
+  Edit3,
+  Eye,
+  FileText,
+  GitCompare,
+  Loader2,
+  LogOut,
+  Monitor,
+  Sparkles,
+  Stethoscope,
+  Target,
+  Trash2,
+  Upload,
+  Wand2,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
+import { ResumePreview } from "@/components/resume-preview";
+import { normalizeResumeMarkdown } from "@/lib/resume-formatting.js";
+
+const STORAGE_KEY = "resume_demo";
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 type Version = "original" | "optimized";
-interface ResumeData { id?: string; title: string; position: string; original_content: string; optimized_content: string; target_jd?: string; }
+type WorkflowMode = "fast" | "professional";
+type UserType = "auto" | "fresh_graduate" | "junior" | "career_switcher" | "senior";
+type Strength = "conservative" | "professional" | "strong";
 
-const DEMO_KEY = "resume_optimizer_demo_data";
+type ResumeState = {
+  title: string;
+  position: string;
+  original_content: string;
+  optimized_content: string;
+};
 
-function loadDemoData(): ResumeData {
-  if (typeof window === "undefined") return { title: "我的简历", position: "", original_content: "", optimized_content: "" };
-  try { const d = localStorage.getItem(DEMO_KEY); return d ? JSON.parse(d) : { title: "我的简历", position: "", original_content: "", optimized_content: "" }; }
-  catch { return { title: "我的简历", position: "", original_content: "", optimized_content: "" }; }
+type User = { id: string; email: string };
+
+type DimensionScore = { name: string; score: number; reason: string };
+type TopIssue = {
+  severity: "high" | "medium" | "low";
+  section: string;
+  originalExcerpt: string;
+  problem: string;
+  suggestion: string;
+};
+type Diagnosis = {
+  userType: Exclude<UserType, "auto">;
+  userTypeReason: string;
+  overallScore: number;
+  dimensionScores: DimensionScore[];
+  topIssues: TopIssue[];
+  jdMatch: {
+    enabled: boolean;
+    matchScore: number;
+    hardRequirements: string[];
+    matchedKeywords: string[];
+    missingKeywords: string[];
+    recommendations: string[];
+  };
+  riskNotes: string[];
+};
+type EditExplanation = {
+  originalExcerpt: string;
+  revisedExcerpt: string;
+  reason: string;
+  requiresUserConfirmation: boolean;
+  confirmationPrompt?: string;
+};
+type Optimization = {
+  optimizedMarkdown: string;
+  editSummary: string[];
+  editExplanations: EditExplanation[];
+  riskNotes: string[];
+};
+
+const USER_TYPES: Array<{ value: UserType; label: string; note: string }> = [
+  { value: "auto", label: "AI 自动判断", note: "适合不确定阶段" },
+  { value: "fresh_graduate", label: "应届生", note: "校园/项目/潜力" },
+  { value: "junior", label: "1-3 年职场人", note: "贡献/量化/成长" },
+  { value: "career_switcher", label: "转行求职者", note: "迁移能力/叙事" },
+  { value: "senior", label: "中高级人才", note: "影响力/规模/决策" },
+];
+
+const STRENGTHS: Array<{ value: Strength; label: string }> = [
+  { value: "conservative", label: "保守润色" },
+  { value: "professional", label: "专业增强" },
+  { value: "strong", label: "强岗位匹配" },
+];
+
+const EMPTY_RESUME: ResumeState = {
+  title: "我的简历",
+  position: "",
+  original_content: "",
+  optimized_content: "",
+};
+
+function loadResume(): ResumeState {
+  if (typeof window === "undefined") return EMPTY_RESUME;
+  try {
+    const data = localStorage.getItem(STORAGE_KEY);
+    const parsed = data ? { ...EMPTY_RESUME, ...JSON.parse(data) } : EMPTY_RESUME;
+    return {
+      ...parsed,
+      original_content: normalizeResumeMarkdown(parsed.original_content || ""),
+      optimized_content: normalizeResumeMarkdown(parsed.optimized_content || ""),
+    };
+  } catch {
+    return EMPTY_RESUME;
+  }
 }
-function saveDemoData(d: ResumeData) { if (typeof window !== "undefined") localStorage.setItem(DEMO_KEY, JSON.stringify(d)); }
 
-function ResumePreview({ markdown }: { markdown: string }) {
-  if (!markdown) return (<div className="flex items-center justify-center h-full min-h-[400px] text-muted-foreground text-sm">请在下方 Markdown 编辑器中输入简历内容</div>);
-  return (
-    <div className="max-w-[794px] mx-auto bg-white shadow-md rounded p-10 text-sm leading-relaxed print:shadow-none print:p-0">
-      <ReactMarkdown components={{
-        h1: ({ ...p }) => <h1 className="text-xl font-bold text-center mb-4 pb-3 border-b-2 border-gray-800 tracking-wide" {...p} />,
-        h2: ({ ...p }) => <h2 className="text-base font-bold mt-5 mb-2 pb-1 border-b border-gray-300 text-gray-800" {...p} />,
-        h3: ({ ...p }) => <h3 className="text-sm font-semibold mt-3 mb-1.5 text-gray-700" {...p} />,
-        p: ({ children }) => { const txt = typeof children === 'string' ? children : ''; if (txt.includes("|")) { const parts = txt.split(/(\*\*[^*]+\*\*)/g); return <p className="mb-1 text-xs text-gray-600">{parts.map((part,i)=>part.startsWith("**")&&part.endsWith("**")?<strong key={i} className="text-gray-900">{part.slice(2,-2)}</strong>:<span key={i}>{part}</span>)}</p>; } return <p className="mb-1 text-xs text-gray-700">{children}</p>; },
-        li: ({ ...p }) => <li className="mb-0.5 text-xs text-gray-700 ml-4 list-disc" {...p} />,
-        ul: ({ ...p }) => <ul className="mb-2" {...p} />,
-        strong: ({ ...p }) => <strong className="text-gray-900 font-semibold" {...p} />,
-        em: ({ ...p }) => <em className="text-gray-500 italic text-xs" {...p} />,
-      }}>{markdown}</ReactMarkdown>
-    </div>
-  );
+function saveResume(data: ResumeState) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
-export default function HomePage() {
-  const [user, setUser] = useState<any>(null);
-  const [isDemo, setIsDemo] = useState(false);
-  const [resume, setResume] = useState<ResumeData>({ title: "我的简历", position: "", original_content: "", optimized_content: "" });
-  const [activeVersion, setActiveVersion] = useState<Version>("original");
-  const [showEditor, setShowEditor] = useState(true);
-  const [isOptimizing, setIsOptimizing] = useState(false);
-  const [isDiagnosing, setIsDiagnosing] = useState(false);
-  const [showPK, setShowPK] = useState(false);
-  const [showDiagnosis, setShowDiagnosis] = useState("");
-  const [showJdDialog, setShowJdDialog] = useState(false);
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "未知错误";
+}
+
+function formatImportedText(text: string) {
+  return normalizeResumeMarkdown(text);
+}
+
+function severityClass(severity: TopIssue["severity"]) {
+  if (severity === "high") return "text-red-600 bg-red-50 border-red-100";
+  if (severity === "medium") return "text-amber-700 bg-amber-50 border-amber-100";
+  return "text-slate-600 bg-slate-50 border-slate-100";
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+export default function Page() {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [demo, setDemo] = useState(false);
+  const [resume, setResume] = useState<ResumeState>(loadResume);
+  const [version, setVersion] = useState<Version>("original");
+  const [editorOpen, setEditorOpen] = useState(true);
+  const [workflowMode, setWorkflowMode] = useState<WorkflowMode>("fast");
+  const [userType, setUserType] = useState<UserType>("auto");
+  const [jdEnabled, setJdEnabled] = useState(false);
   const [jdText, setJdText] = useState("");
-  const [authMode, setAuthMode] = useState<"login"|"register">("login");
-  const [authEmail, setAuthEmail] = useState("");
-  const [authPass, setAuthPass] = useState("");
+  const [strength, setStrength] = useState<Strength>("professional");
+  const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null);
+  const [diagnosisMarkdown, setDiagnosisMarkdown] = useState("");
+  const [optimization, setOptimization] = useState<Optimization | null>(null);
+  const [busy, setBusy] = useState<"diagnose" | "optimize" | "flow" | "import" | null>(null);
+  const [error, setError] = useState("");
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
 
-  // Try Supabase session first
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => { if (session) { setUser(session.user); setIsDemo(false); } });
-    const { data: l } = supabase.auth.onAuthStateChange((_e, s) => { if (s) { setUser(s.user); setIsDemo(false); } else { setUser(null); setIsDemo(false); } });
-    return () => l.subscription.unsubscribe();
-  }, []);
+  const hasOriginal = Boolean(resume.original_content.trim());
+  const hasOptimized = Boolean(resume.optimized_content.trim());
+  const currentMarkdown = version === "original" ? resume.original_content : resume.optimized_content;
 
-  // Load resume when user changes
-  useEffect(() => { if (user) loadResume(); }, [user]);
-
-  // Auto-save demo data
-  useEffect(() => { if (isDemo && resume.original_content) saveDemoData(resume); }, [resume, isDemo]);
-
-  async function loadResume() {
-    if (isDemo) { setResume(loadDemoData()); return; }
-    const { data } = await supabase.from("resumes").select("*").eq("user_id", user.id).order("updated_at", { ascending: false }).limit(1);
-    if (data?.length) { const r = data[0]; setResume({ id: r.id, title: r.title, position: r.position, original_content: r.original_content||"", optimized_content: r.optimized_content||"", target_jd: r.target_jd }); }
+  function updateResume(next: ResumeState) {
+    setResume(next);
+    saveResume(next);
   }
 
-  function saveResume() {
-    if (!resume.original_content) return;
-    if (isDemo) { saveDemoData(resume); return; }
-    if (!user) return;
-    const p = { user_id: user.id, title: resume.title, position: resume.position, original_content: resume.original_content, optimized_content: resume.optimized_content, target_jd: resume.target_jd };
-    if (resume.id) supabase.from("resumes").update(p).eq("id", resume.id);
-    else supabase.from("resumes").insert(p).select("id").single().then(({data}) => { if (data) setResume(r=>({...r,id:data.id})); });
+  function updateCurrentMarkdown(content: string) {
+    const next = version === "original"
+      ? { ...resume, original_content: content }
+      : { ...resume, optimized_content: content };
+    updateResume(next);
   }
 
-  const getContent = () => activeVersion === "original" ? resume.original_content : resume.optimized_content;
-  const setContent = (v: string) => { if (activeVersion === "original") setResume(r=>({...r,original_content:v})); else setResume(r=>({...r,optimized_content:v})); };
+  function formatCurrentMarkdown() {
+    const formatted = normalizeResumeMarkdown(currentMarkdown);
+    if (!formatted) return;
+    updateCurrentMarkdown(formatted);
+  }
 
-  async function optimize(mode: "general"|"targeted") {
-    if (!resume.original_content) return;
-    setIsOptimizing(true);
+  async function importFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setBusy("import");
+    setError("");
+
     try {
-      const r = await fetch("/api/optimize", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({markdown:resume.original_content,mode,targetJd:mode==="targeted"?jdText:undefined}) });
-      const d = await r.json();
-      if (d.optimized) { setResume(r=>({...r,optimized_content:d.optimized})); setActiveVersion("optimized"); setTimeout(()=>saveDemoData({...resume,optimized_content:d.optimized}),100); }
-    } catch(e){ console.error(e); }
-    finally { setIsOptimizing(false); }
+      const fileName = file.name.toLowerCase();
+      if (!fileName.endsWith(".pdf") && !fileName.endsWith(".docx") && !fileName.endsWith(".txt") && !fileName.endsWith(".md") && !fileName.endsWith(".markdown")) {
+        throw new Error(".doc 暂不支持，请上传 PDF、DOCX、TXT 或 Markdown 文件。");
+      }
+
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch("/api/import", { method: "POST", body: formData });
+      const data = await response.json();
+      if (!response.ok || data.error) throw new Error(data.error || "文件解析失败");
+
+      const formatted = formatImportedText(data.markdown || data.text || "");
+      if (formatted.length < 30) throw new Error("文件解析出的文本过少，请改为粘贴简历正文。");
+      updateResume({ ...resume, original_content: formatted });
+      setVersion("original");
+    } catch (exception) {
+      setError(`导入失败：${getErrorMessage(exception)}`);
+    } finally {
+      setBusy(null);
+      if (fileRef.current) fileRef.current.value = "";
+    }
   }
 
-  async function runDiagnosis() {
-    if (!resume.original_content) return;
-    setIsDiagnosing(true);
-    try {
-      const r = await fetch("/api/diagnose", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({markdown:resume.original_content}) });
-      const d = await r.json();
-      setShowDiagnosis(d.diagnosis||"诊断完成");
-    } catch(e){console.error(e);}
-    finally{setIsDiagnosing(false);}
-  }
-
-  async function handleAuth() {
+  async function signIn() {
     setAuthError("");
-    if (authMode==="login") {
-      const { error } = await supabase.auth.signInWithPassword({email:authEmail,password:authPass});
-      if (error) setAuthError(error.message);
-    } else {
-      const { error } = await supabase.auth.signUp({email:authEmail,password:authPass});
-      if (error) setAuthError(error.message);
-      else setAuthError("注册成功！请检查邮箱确认。");
+    if (!SUPABASE_URL || !SUPABASE_KEY) {
+      setAuthError("Supabase 环境变量未配置，请检查 .env.local");
+      return;
+    }
+
+    setAuthLoading(true);
+    try {
+      const endpoint = authMode === "register"
+        ? `${SUPABASE_URL}/auth/v1/signup`
+        : `${SUPABASE_URL}/auth/v1/token?grant_type=password`;
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error_description || data.msg || "认证失败");
+      if (authMode === "register") {
+        setAuthError("注册成功，请切换到登录模式登录");
+        setAuthMode("login");
+      } else {
+        setUser({ id: data.user.id, email: data.user.email });
+      }
+    } catch (exception) {
+      setAuthError(getErrorMessage(exception));
+    } finally {
+      setAuthLoading(false);
     }
   }
 
   function enterDemo() {
-    setIsDemo(true);
-    setUser({ id: "demo-user", email: "demo@example.com" });
-    setResume(loadDemoData());
+    setDemo(true);
+    setUser({ id: "demo", email: "demo" });
+    setResume(loadResume());
   }
 
-  function exitDemo() {
-    setIsDemo(false);
-    setUser(null);
-    setResume({ title: "我的简历", position: "", original_content: "", optimized_content: "" });
+  async function requestDiagnosis() {
+    if (!hasOriginal) return null;
+    setBusy("diagnose");
+    setError("");
+
+    try {
+      const response = await fetch("/api/diagnose", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          markdown: resume.original_content,
+          userType,
+          targetRole: resume.position,
+          jdText: jdEnabled ? jdText : "",
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || data.error) throw new Error(data.error || "诊断失败");
+      setDiagnosis(data.structured);
+      setDiagnosisMarkdown(data.diagnosis || "");
+      return data.structured as Diagnosis;
+    } catch (exception) {
+      setError(getErrorMessage(exception));
+      return null;
+    } finally {
+      setBusy(null);
+    }
   }
 
-  function downloadPDF() {
-    const content = getContent(); if (!content) return;
-    const w = window.open("","_blank")!;
-    w.document.write(`<html><head><meta charset="utf-8"><style>body{font-family:sans-serif;max-width:794px;margin:40px auto;padding:20px;font-size:13px;line-height:1.6}h1{text-align:center;border-bottom:2px solid #333;padding-bottom:12px;font-size:20px}h2{border-bottom:1px solid #ccc;margin-top:20px;padding-bottom:4px;font-size:15px}li{margin-bottom:3px}strong{color:#222}</style></head><body>${content.replace(/\n/g,"<br/>").replace(/^### (.+)$/gm,"<h3>$1</h3>").replace(/^## (.+)$/gm,"<h2>$1</h2>").replace(/^# (.+)$/gm,"<h1>$1</h1>").replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>").replace(/^- (.+)/gm,"<li>$1</li>").replace(/((?:<li>.*<\/li>\s*)+)/g,"<ul>$1</ul>")}</body></html>`);
-    w.document.close(); setTimeout(()=>w.print(),300);
+  async function requestOptimization(inputDiagnosis?: Diagnosis | null) {
+    if (!hasOriginal) return;
+    setBusy("optimize");
+    setError("");
+
+    try {
+      const response = await fetch("/api/optimize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          markdown: resume.original_content,
+          userType,
+          targetRole: resume.position,
+          jdText: jdEnabled ? jdText : "",
+          strength: workflowMode === "fast" ? "professional" : strength,
+          structuredDiagnosis: inputDiagnosis || diagnosis,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || data.error) throw new Error(data.error || "优化失败");
+      const result = data.optimization as Optimization;
+      const optimizedMarkdown = normalizeResumeMarkdown(result.optimizedMarkdown || data.optimized || "");
+      setOptimization(result);
+      updateResume({ ...resume, optimized_content: optimizedMarkdown });
+      setVersion("optimized");
+    } catch (exception) {
+      setError(getErrorMessage(exception));
+    } finally {
+      setBusy(null);
+    }
   }
 
-  const hasContent = Boolean(resume.original_content);
-  const hasOptimized = Boolean(resume.optimized_content);
+  async function runFullFlow() {
+    setBusy("flow");
+    setError("");
+    const nextDiagnosis = await requestDiagnosis();
+    if (nextDiagnosis) await requestOptimization(nextDiagnosis);
+    setBusy(null);
+  }
+
+  function downloadPdf() {
+    if (!currentMarkdown) return;
+    const html = escapeHtml(normalizeResumeMarkdown(currentMarkdown))
+      .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+      .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+      .replace(/^# (.+)$/gm, "<h1>$1</h1>")
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/^- (.+)$/gm, "<li>$1</li>")
+      .replace(/\n/g, "<br/>")
+      .replace(/((?:<li>.*<\/li><br\/>)+)/g, "<ul>$1</ul>");
+    const windowRef = window.open("", "_blank");
+    if (!windowRef) return;
+    windowRef.document.write(`<html><head><meta charset="utf-8"><title>${escapeHtml(resume.title)}</title><style>body{font-family:Arial,sans-serif;max-width:794px;margin:40px auto;padding:20px;font-size:13px;line-height:1.6;color:#111827}h1{text-align:center;border-bottom:2px solid #111827;padding-bottom:12px;font-size:20px}h2{border-bottom:1px solid #d1d5db;margin-top:20px;padding-bottom:4px;font-size:15px}h3{font-size:14px}li{margin-bottom:3px}strong{color:#111827}</style></head><body>${html}</body></html>`);
+    windowRef.document.close();
+    setTimeout(() => windowRef.print(), 300);
+  }
+
+  function resetResume() {
+    updateResume(EMPTY_RESUME);
+    setVersion("original");
+    setDiagnosis(null);
+    setOptimization(null);
+    setDiagnosisMarkdown("");
+    setError("");
+  }
 
   if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-indigo-50">
-        <div className="w-full max-w-sm p-8 bg-white rounded-xl shadow-lg border">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+        <div className="w-full max-w-sm rounded-lg border bg-white p-8 shadow-sm">
           <div className="text-center mb-6">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-primary/10 mb-3">
-              <Sparkles className="w-6 h-6 text-primary" />
+            <div className="inline-flex h-12 w-12 items-center justify-center rounded-lg bg-blue-50 mb-3">
+              <Sparkles className="h-6 w-6 text-blue-600" />
             </div>
             <h1 className="text-xl font-bold">AI 简历优化工具</h1>
-            <p className="text-sm text-muted-foreground mt-1">登录以使用 AI 优化您的简历</p>
+            <p className="text-sm text-muted-foreground mt-1">可信诊断，可解释优化</p>
           </div>
-          <div className="space-y-3">
-            <Input placeholder="邮箱地址" value={authEmail} onChange={e=>setAuthEmail(e.target.value)} />
-            <Input placeholder="密码" type="password" value={authPass} onChange={e=>setAuthPass(e.target.value)} />
-            {authError && <p className="text-xs text-destructive">{authError}</p>}
-            <Button className="w-full" onClick={handleAuth}>{authMode==="login"?"登录":"注册"}</Button>
+          <form className="space-y-3" onSubmit={(event) => {
+            event.preventDefault();
+            signIn();
+          }}>
+            <Input placeholder="邮箱地址" value={email} onChange={(event) => setEmail(event.target.value)} />
+            <Input placeholder="密码" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+            {authError && <p className={`text-xs ${authError.includes("成功") ? "text-green-600" : "text-destructive"}`}>{authError}</p>}
+            <Button className="w-full" type="submit" disabled={authLoading}>
+              {authLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {authMode === "login" ? "登录" : "注册"}
+            </Button>
             <p className="text-xs text-center text-muted-foreground">
-              {authMode==="login"?(<>没有账号？<button className="text-primary hover:underline" onClick={()=>setAuthMode("register")}>注册</button></>):(<>已有账号？<button className="text-primary hover:underline" onClick={()=>setAuthMode("login")}>登录</button></>)}
+              {authMode === "login" ? "没有账号？" : "已有账号？"}
+              <button type="button" className="text-primary hover:underline" onClick={() => setAuthMode(authMode === "login" ? "register" : "login")}>
+                {authMode === "login" ? "注册" : "登录"}
+              </button>
             </p>
-          </div>
+          </form>
           <Separator className="my-4" />
-          <Button className="w-full" variant="outline" onClick={enterDemo}>
-            <Monitor className="mr-2 h-4 w-4" /> 体验 Demo（无需登录）
+          <Button className="w-full" type="button" variant="outline" onClick={enterDemo}>
+            <Monitor className="mr-2 h-4 w-4" />
+            体验 Demo（无需登录）
           </Button>
-          <p className="text-[10px] text-muted-foreground text-center mt-2">
-            配置 Supabase 后可正常注册登录
-          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen bg-muted/30">
-      {/* Sidebar */}
-      <div className="w-64 flex-shrink-0 border-r bg-sidebar flex flex-col">
-        <div className="p-4 border-b border-sidebar-border">
-          <div className="flex items-center gap-2 mb-3">
-            <Sparkles className="w-5 h-5 text-primary" />
-            <span className="font-semibold text-sm">简历优化AI</span>
-            {isDemo && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">Demo</span>}
+    <div className="flex h-screen bg-slate-100 text-slate-950">
+      <aside className="w-[320px] flex-shrink-0 border-r bg-white flex flex-col">
+        <div className="p-4 border-b">
+          <div className="flex items-center gap-2 mb-4">
+            <Sparkles className="h-5 w-5 text-blue-600" />
+            <span className="font-semibold">简历优化 AI</span>
+            {demo && <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">Demo</span>}
           </div>
-          <div className="space-y-2">
-            <Input className="h-8 text-xs" placeholder="简历标题" value={resume.title} onChange={e=>setResume(r=>({...r,title:e.target.value}))} />
-            <Input className="h-8 text-xs" placeholder="求职职位" value={resume.position} onChange={e=>setResume(r=>({...r,position:e.target.value}))} />
-            <div className="text-xs text-muted-foreground">
-              <span>版本：<strong>{activeVersion==="original"?"原始版":"优化版"}</strong></span>
-              {resume.position && <span> · {resume.position}</span>}
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">简历标题</Label>
+              <Input className="h-8 text-xs" value={resume.title} onChange={(event) => updateResume({ ...resume, title: event.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">目标岗位</Label>
+              <Input className="h-8 text-xs" placeholder="例如：数据分析师" value={resume.position} onChange={(event) => updateResume({ ...resume, position: event.target.value })} />
             </div>
           </div>
         </div>
-        <div className="p-3 space-y-1.5">
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest px-1">AI 优化</p>
-          <Button className="w-full justify-start h-8 text-xs" size="sm" disabled={!hasContent||isOptimizing} onClick={()=>optimize("general")}>
-            {isOptimizing ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <Wand2 className="mr-2 h-3 w-3" />} 通用优化
-          </Button>
-          <Button className="w-full justify-start h-8 text-xs" variant="outline" size="sm" disabled={!hasContent||isOptimizing}
-            onClick={()=>{setJdText("");setShowJdDialog(true);}}>
-            <Target className="mr-2 h-3 w-3" /> 专岗优化
-          </Button>
-        </div>
-        <Separator />
-        <div className="p-3 space-y-1.5">
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest px-1">版本切换</p>
-          <div className="flex rounded-md border overflow-hidden">
-            <button onClick={()=>setActiveVersion("original")} className={`flex-1 py-1.5 text-xs font-medium transition-colors ${activeVersion==="original"?"bg-primary text-primary-foreground":""}`}>原始版</button>
-            <button onClick={()=>setActiveVersion("optimized")} className={`flex-1 py-1.5 text-xs font-medium transition-colors ${activeVersion==="optimized"?"bg-primary text-primary-foreground":""}`} disabled={!hasOptimized}>优化版</button>
-          </div>
-        </div>
-        <Separator />
-        <div className="p-3 space-y-1 flex-1">
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest px-1">更多</p>
-          <Button className="w-full justify-start h-8 text-xs" variant="ghost" size="sm" disabled={!hasOptimized} onClick={()=>setShowPK(true)}><GitCompare className="mr-2 h-3 w-3" /> 版本PK</Button>
-          <Button className="w-full justify-start h-8 text-xs" variant="ghost" size="sm" disabled={!hasContent||isDiagnosing} onClick={runDiagnosis}>{isDiagnosing ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <Stethoscope className="mr-2 h-3 w-3" />} 简历诊断</Button>
-          <Button className="w-full justify-start h-8 text-xs" variant="ghost" size="sm" disabled={!getContent()} onClick={downloadPDF}><Download className="mr-2 h-3 w-3" /> 下载PDF</Button>
-          <Button className="w-full justify-start h-8 text-xs" variant="ghost" size="sm" onClick={()=>{setResume({title:"我的简历",position:"",original_content:"",optimized_content:""});saveDemoData({title:"我的简历",position:"",original_content:"",optimized_content:""});}}><Trash2 className="mr-2 h-3 w-3" /> 删除简历</Button>
-        </div>
-        <Separator />
-        <div className="p-3">
-          <Button className="w-full justify-start h-8 text-xs" variant="ghost" size="sm"
-            onClick={isDemo ? exitDemo : async()=>{await supabase.auth.signOut();}}>
-            <LogOut className="mr-2 h-3 w-3" /> {isDemo ? "退出 Demo" : "退出登录"}
-          </Button>
-        </div>
-      </div>
 
-      {/* Main */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <div className="flex items-center gap-3 px-6 py-3 border-b bg-white">
-          <div className="flex-1">
-            <h2 className="text-sm font-semibold">{resume.title||"我的简历"}</h2>
-            {resume.position && <p className="text-xs text-muted-foreground">职位：{resume.position}</p>}
-          </div>
-          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={()=>setShowEditor(!showEditor)}>
-            {showEditor ? <Eye className="mr-1 h-3 w-3" /> : <Edit3 className="mr-1 h-3 w-3" />} {showEditor?"预览模式":"编辑模式"}
-          </Button>
-          <Button size="sm" className="h-8 text-xs" onClick={saveResume}><FileText className="mr-1 h-3 w-3" /> 保存</Button>
+        <div className="flex-1 overflow-auto p-4 space-y-5">
+          <section className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">模式</p>
+            <div className="grid grid-cols-2 gap-2">
+              {(["fast", "professional"] as WorkflowMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setWorkflowMode(mode)}
+                  className={`rounded-md border px-3 py-2 text-left text-xs transition ${workflowMode === mode ? "border-blue-600 bg-blue-50 text-blue-700" : "hover:bg-slate-50"}`}
+                >
+                  <span className="block font-semibold">{mode === "fast" ? "快速模式" : "专业模式"}</span>
+                  <span className="text-[10px] text-muted-foreground">{mode === "fast" ? "一键出结果" : "诊断与解释"}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">用户阶段</p>
+            <div className="space-y-1.5">
+              {USER_TYPES.map((item) => (
+                <button
+                  key={item.value}
+                  onClick={() => setUserType(item.value)}
+                  className={`w-full rounded-md border px-3 py-2 text-left text-xs transition ${userType === item.value ? "border-blue-600 bg-blue-50 text-blue-700" : "hover:bg-slate-50"}`}
+                >
+                  <span className="font-semibold">{item.label}</span>
+                  <span className="ml-2 text-[10px] text-muted-foreground">{item.note}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">JD 匹配</p>
+              <button className="text-xs text-blue-600" onClick={() => setJdEnabled(!jdEnabled)}>
+                {jdEnabled ? "关闭" : "开启"}
+              </button>
+            </div>
+            {jdEnabled && (
+              <Textarea
+                className="min-h-28 text-xs"
+                placeholder="粘贴目标 JD，短文本会作为岗位方向处理"
+                value={jdText}
+                onChange={(event) => setJdText(event.target.value)}
+              />
+            )}
+          </section>
+
+          {workflowMode === "professional" && (
+            <section className="space-y-2">
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">优化强度</p>
+              <div className="space-y-1.5">
+                {STRENGTHS.map((item) => (
+                  <button
+                    key={item.value}
+                    onClick={() => setStrength(item.value)}
+                    className={`w-full rounded-md border px-3 py-2 text-left text-xs font-medium transition ${strength === item.value ? "border-blue-600 bg-blue-50 text-blue-700" : "hover:bg-slate-50"}`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section className="space-y-2">
+            <Button className="w-full justify-start" disabled={!hasOriginal || busy === "flow"} onClick={runFullFlow}>
+              {busy === "flow" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
+              诊断并优化
+            </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="outline" size="sm" disabled={!hasOriginal || busy === "diagnose"} onClick={requestDiagnosis}>
+                {busy === "diagnose" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Stethoscope className="mr-1 h-3 w-3" />}
+                只诊断
+              </Button>
+              <Button variant="outline" size="sm" disabled={!hasOriginal || busy === "optimize"} onClick={() => requestOptimization()}>
+                {busy === "optimize" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Target className="mr-1 h-3 w-3" />}
+                只优化
+              </Button>
+            </div>
+            {error && (
+              <div className="rounded-md border border-red-100 bg-red-50 p-3 text-xs text-red-700">
+                {error}
+              </div>
+            )}
+          </section>
         </div>
-        <div className="flex-1 overflow-auto p-6"><ResumePreview markdown={getContent()} /></div>
-        {showEditor && (
-          <div className="border-t bg-card h-56 flex flex-col">
-            <div className="flex items-center px-4 py-1.5 border-b"><span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Markdown 编辑器</span></div>
-            <Textarea className="flex-1 border-0 rounded-none resize-none font-mono text-xs p-4 focus-visible:ring-0 leading-relaxed"
-              placeholder="# 我的简历\n\n## 个人信息\n- **姓名**：张三\n- **电话**：13800138000\n\n## 自我评价\n- 有X年XX行业经验..."
-              value={getContent()} onChange={e=>setContent(e.target.value)} />
+
+        <div className="border-t p-3 space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant={version === "original" ? "default" : "outline"} size="sm" onClick={() => setVersion("original")}>原始版</Button>
+            <Button variant={version === "optimized" ? "default" : "outline"} size="sm" disabled={!hasOptimized} onClick={() => setVersion("optimized")}>优化版</Button>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="ghost" size="sm" disabled={!hasOptimized} onClick={() => setCompareOpen(true)}><GitCompare className="mr-1 h-3 w-3" />对比</Button>
+            <Button variant="ghost" size="sm" disabled={!currentMarkdown} onClick={downloadPdf}><Download className="mr-1 h-3 w-3" />PDF</Button>
+            <Button variant="ghost" size="sm" onClick={resetResume}><Trash2 className="mr-1 h-3 w-3" />清空</Button>
+            <Button variant="ghost" size="sm" onClick={() => { setDemo(false); setUser(null); }}><LogOut className="mr-1 h-3 w-3" />退出</Button>
+          </div>
+        </div>
+      </aside>
+
+      <main className="flex-1 flex min-w-0 flex-col">
+        <header className="flex items-center gap-3 border-b bg-white px-6 py-3">
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-sm font-semibold">{resume.title || "我的简历"}</h2>
+            <p className="text-xs text-muted-foreground">
+              {version === "original" ? "原始版" : "优化版"}{resume.position ? ` · ${resume.position}` : ""}
+            </p>
+          </div>
+          <input ref={fileRef} type="file" className="hidden" accept=".pdf,.docx,.txt,.md,.markdown" onChange={importFile} disabled={busy === "import"} />
+          <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} disabled={busy === "import"}>
+            {busy === "import" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Upload className="mr-1 h-3 w-3" />}
+            导入
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setEditorOpen(!editorOpen)}>
+            {editorOpen ? <Eye className="mr-1 h-3 w-3" /> : <Edit3 className="mr-1 h-3 w-3" />}
+            {editorOpen ? "预览" : "编辑"}
+          </Button>
+          <Button size="sm" onClick={() => saveResume(resume)}>
+            <FileText className="mr-1 h-3 w-3" />
+            保存
+          </Button>
+        </header>
+
+        <div className="flex-1 overflow-auto p-6">
+          {!currentMarkdown ? (
+            <div className="flex h-full min-h-80 items-center justify-center">
+              <div className="max-w-md text-center">
+                <FileText className="mx-auto mb-3 h-10 w-10 text-slate-400" />
+                <h3 className="font-semibold">导入或粘贴一份简历</h3>
+                <p className="mt-1 text-sm text-muted-foreground">支持 PDF、DOCX、TXT 和 Markdown；完整内容越多，诊断越可信。</p>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-[minmax(0,1fr)_360px] gap-5">
+              <div className="min-w-0">
+                <ResumePreview markdown={currentMarkdown} title={resume.title} />
+              </div>
+              <aside className="space-y-4">
+                {diagnosis && (
+                  <section className="rounded-lg border bg-white p-4 shadow-sm">
+                    <div className="mb-3 flex items-start justify-between">
+                      <div>
+                        <p className="text-xs font-semibold text-muted-foreground">诊断分</p>
+                        <p className="text-3xl font-bold text-blue-600">{diagnosis.overallScore}</p>
+                      </div>
+                      <CheckCircle2 className="h-5 w-5 text-green-600" />
+                    </div>
+                    <p className="text-xs text-slate-600">{diagnosis.userTypeReason}</p>
+                    <Separator className="my-3" />
+                    <div className="space-y-2">
+                      {diagnosis.dimensionScores.map((item) => (
+                        <div key={item.name}>
+                          <div className="flex justify-between text-xs">
+                            <span>{item.name}</span>
+                            <span className="font-semibold">{item.score}</span>
+                          </div>
+                          <div className="mt-1 h-1.5 rounded bg-slate-100">
+                            <div className="h-1.5 rounded bg-blue-600" style={{ width: `${Math.max(0, Math.min(100, item.score))}%` }} />
+                          </div>
+                          <p className="mt-1 text-[11px] text-muted-foreground">{item.reason}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {diagnosis?.topIssues?.length ? (
+                  <section className="rounded-lg border bg-white p-4 shadow-sm">
+                    <p className="mb-3 text-xs font-semibold text-muted-foreground">关键问题</p>
+                    <div className="space-y-3">
+                      {diagnosis.topIssues.map((issue, index) => (
+                        <div key={`${issue.section}-${index}`} className="rounded-md border p-3">
+                          <span className={`inline-flex rounded border px-1.5 py-0.5 text-[10px] font-semibold ${severityClass(issue.severity)}`}>{issue.severity}</span>
+                          <p className="mt-2 text-xs font-semibold">{issue.section}</p>
+                          <p className="mt-1 text-xs text-slate-700">{issue.problem}</p>
+                          <p className="mt-1 text-[11px] text-muted-foreground">{issue.suggestion}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
+
+                {diagnosis?.jdMatch?.enabled && (
+                  <section className="rounded-lg border bg-white p-4 shadow-sm">
+                    <p className="mb-2 text-xs font-semibold text-muted-foreground">JD 匹配</p>
+                    <p className="text-2xl font-bold">{diagnosis.jdMatch.matchScore}</p>
+                    <div className="mt-3 space-y-2 text-xs">
+                      <p><span className="font-semibold">已匹配：</span>{diagnosis.jdMatch.matchedKeywords.join("、") || "暂无"}</p>
+                      <p><span className="font-semibold">缺口：</span>{diagnosis.jdMatch.missingKeywords.join("、") || "暂无"}</p>
+                    </div>
+                  </section>
+                )}
+
+                {optimization?.editSummary?.length ? (
+                  <section className="rounded-lg border bg-white p-4 shadow-sm">
+                    <p className="mb-3 text-xs font-semibold text-muted-foreground">优化摘要</p>
+                    <ul className="space-y-2 text-xs text-slate-700">
+                      {optimization.editSummary.map((item) => <li key={item}>- {item}</li>)}
+                    </ul>
+                  </section>
+                ) : null}
+
+                {workflowMode === "professional" && optimization?.editExplanations?.length ? (
+                  <section className="rounded-lg border bg-white p-4 shadow-sm">
+                    <p className="mb-3 text-xs font-semibold text-muted-foreground">可解释编辑</p>
+                    <div className="space-y-3">
+                      {optimization.editExplanations.map((item, index) => (
+                        <div key={`${item.originalExcerpt}-${index}`} className="rounded-md border p-3 text-xs">
+                          <p className="font-semibold">为什么改</p>
+                          <p className="mt-1 text-slate-700">{item.reason}</p>
+                          {item.requiresUserConfirmation && (
+                            <p className="mt-2 flex items-start gap-1 text-amber-700">
+                              <AlertTriangle className="mt-0.5 h-3 w-3 flex-shrink-0" />
+                              {item.confirmationPrompt || "该修改需要用户确认事实。"}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
+
+                {(diagnosis?.riskNotes?.length || optimization?.riskNotes?.length) ? (
+                  <section className="rounded-lg border bg-white p-4 shadow-sm">
+                    <p className="mb-3 text-xs font-semibold text-muted-foreground">风险提示</p>
+                    <ul className="space-y-2 text-xs text-slate-700">
+                      {[...(diagnosis?.riskNotes || []), ...(optimization?.riskNotes || [])].map((item, index) => <li key={`${item}-${index}`}>- {item}</li>)}
+                    </ul>
+                  </section>
+                ) : null}
+              </aside>
+            </div>
+          )}
+        </div>
+
+        {editorOpen && (
+          <div className="h-56 border-t bg-white flex flex-col">
+            <div className="flex items-center justify-between border-b px-4 py-2">
+              <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Markdown 编辑器</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-muted-foreground">{version === "original" ? "编辑原始简历" : "编辑优化版本"}</span>
+                <Button className="h-6 px-2 text-[10px]" variant="ghost" size="sm" disabled={!currentMarkdown.trim()} onClick={formatCurrentMarkdown}>
+                  <Wand2 className="mr-1 h-3 w-3" />
+                  格式化
+                </Button>
+              </div>
+            </div>
+            <Textarea
+              className="flex-1 resize-none rounded-none border-0 p-4 font-mono text-xs leading-relaxed focus-visible:ring-0"
+              placeholder="# 我的简历&#10;&#10;## 个人信息&#10;- **姓名**：张三&#10;- **电话**：13800138000&#10;&#10;## 项目经历&#10;- 描述你的真实经历、行动和结果"
+              value={currentMarkdown}
+              onChange={(event) => updateCurrentMarkdown(event.target.value)}
+            />
           </div>
         )}
-      </div>
+      </main>
 
-      {/* JD Dialog */}
-      <Dialog open={showJdDialog} onOpenChange={setShowJdDialog}>
-        <DialogContent><DialogHeader><DialogTitle>专岗优化</DialogTitle><DialogDescription>粘贴目标职位JD，AI将针对性优化</DialogDescription></DialogHeader>
-          <Textarea placeholder="粘贴职位描述（JD）..." value={jdText} onChange={e=>setJdText(e.target.value)} rows={8} className="text-xs" />
-          <DialogFooter><Button variant="outline" size="sm" onClick={()=>setShowJdDialog(false)}>取消</Button><Button size="sm" onClick={()=>{setShowJdDialog(false);optimize("targeted");}} disabled={!jdText||isOptimizing}>开始优化</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
-      {/* PK Dialog */}
-      <Dialog open={showPK} onOpenChange={setShowPK}>
-        <DialogContent className="max-w-6xl max-h-[92vh] overflow-auto"><DialogHeader><DialogTitle>版本对比</DialogTitle></DialogHeader>
+      <Dialog open={compareOpen} onOpenChange={setCompareOpen}>
+        <DialogContent className="max-w-6xl max-h-[92vh] overflow-auto">
+          <DialogHeader>
+            <DialogTitle>版本对比</DialogTitle>
+            <DialogDescription>左侧为原始简历，右侧为优化版本。</DialogDescription>
+          </DialogHeader>
           <div className="grid grid-cols-2 gap-4">
-            <div><h4 className="text-xs font-semibold text-muted-foreground mb-2">原始版</h4><div className="border rounded p-4 text-xs max-h-[70vh] overflow-auto bg-white"><ReactMarkdown>{resume.original_content}</ReactMarkdown></div></div>
-            <div><h4 className="text-xs font-semibold text-muted-foreground mb-2">优化版</h4><div className="border rounded p-4 text-xs max-h-[70vh] overflow-auto bg-white"><ReactMarkdown>{resume.optimized_content}</ReactMarkdown></div></div>
+            <div>
+              <h4 className="mb-2 text-xs font-semibold text-muted-foreground">原始版</h4>
+              <div className="max-h-[70vh] overflow-auto rounded-md border bg-white p-4 text-xs"><ReactMarkdown>{normalizeResumeMarkdown(resume.original_content)}</ReactMarkdown></div>
+            </div>
+            <div>
+              <h4 className="mb-2 text-xs font-semibold text-muted-foreground">优化版</h4>
+              <div className="max-h-[70vh] overflow-auto rounded-md border bg-white p-4 text-xs"><ReactMarkdown>{normalizeResumeMarkdown(resume.optimized_content)}</ReactMarkdown></div>
+            </div>
           </div>
+          <DialogFooter>
+            <Button size="sm" onClick={() => setCompareOpen(false)}>关闭</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
-      {/* Diagnosis Dialog */}
-      <Dialog open={Boolean(showDiagnosis)} onOpenChange={()=>setShowDiagnosis("")}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-auto"><DialogHeader><DialogTitle>简历诊断报告</DialogTitle></DialogHeader><div className="text-sm"><ReactMarkdown>{showDiagnosis}</ReactMarkdown></div></DialogContent>
+
+      <Dialog open={Boolean(diagnosisMarkdown) && workflowMode === "fast"} onOpenChange={() => setDiagnosisMarkdown("")}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-auto">
+          <DialogHeader>
+            <DialogTitle>快速诊断报告</DialogTitle>
+            <DialogDescription>本次快速模式生成的结构化诊断摘要。</DialogDescription>
+          </DialogHeader>
+          <div className="text-sm"><ReactMarkdown>{diagnosisMarkdown}</ReactMarkdown></div>
+          <DialogFooter>
+            <Button size="sm" onClick={() => setDiagnosisMarkdown("")}>关闭</Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
     </div>
   );
