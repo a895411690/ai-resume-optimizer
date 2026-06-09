@@ -97,13 +97,29 @@ async function callDeepSeekForExtraction(text: string) {
 
 async function extractPdfText(buffer: Buffer) {
   installPdfNodePolyfills();
-  const { PDFParse } = await import("pdf-parse");
-  const parser = new PDFParse({ data: buffer });
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const { WorkerMessageHandler } = await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
+  (globalThis as typeof globalThis & { pdfjsWorker?: unknown }).pdfjsWorker = { WorkerMessageHandler };
+  const loadingTask = pdfjs.getDocument({
+    data: new Uint8Array(buffer),
+    useWorkerFetch: false,
+    isEvalSupported: false,
+  } as Record<string, unknown>);
   try {
-    const result = await parser.getText();
-    return result.text || "";
+    const document = await loadingTask.promise;
+    const pages: string[] = [];
+    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) {
+      const page = await document.getPage(pageNumber);
+      const content = await page.getTextContent();
+      const pageText = content.items
+        .map((item) => "str" in item ? item.str : "")
+        .filter(Boolean)
+        .join(" ");
+      pages.push(pageText);
+    }
+    return pages.join("\n");
   } finally {
-    await parser.destroy();
+    await loadingTask.destroy();
   }
 }
 
