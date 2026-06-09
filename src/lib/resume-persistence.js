@@ -144,13 +144,41 @@ async function saveResumeWithPersistence({ isDemo, resume, saveLocal, saveCloud 
   return { mode: "cloud", saved };
 }
 
+async function saveOptimizationRecord(client, opts) {
+  const { userId, resumeId, type, inputSummary, outputSummary, modelTier } = opts || {};
+  const { error } = await client.from("optimization_records").insert({
+    user_id: userId,
+    resume_id: resumeId || null,
+    type: type || "optimize",
+    input_summary: (inputSummary || "").slice(0, 500),
+    output_summary: (outputSummary || "").slice(0, 500),
+    model_tier: modelTier || "",
+  });
+  if (error) throw new Error(error.message || "操作记录保存失败");
+}
+
+async function listOptimizationRecords(client, opts) {
+  const { resumeId, limit = 20 } = opts || {};
+  let query = client
+    .from("optimization_records")
+    .select("id,type,input_summary,output_summary,model_tier,created_at")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (resumeId) query = query.eq("resume_id", resumeId);
+  const { data, error } = await query;
+  if (error) throw new Error(error.message || "操作记录加载失败");
+  return data || [];
+}
+
 module.exports = {
   deleteUserResume,
   deserializeResumeFromDatabase,
   fetchUserResume,
   getResumeStateAfterCloudDelete,
   listUserResumes,
+  listOptimizationRecords,
   saveResumeWithPersistence,
+  saveOptimizationRecord,
   saveUserResume,
   serializeResumeForDatabase,
 };

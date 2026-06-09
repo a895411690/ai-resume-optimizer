@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import {
   AlertTriangle,
   CheckCircle2,
+  Clock,
   Download,
   Edit3,
   Eye,
@@ -31,17 +32,20 @@ import { ResumePreview } from "@/components/resume-preview";
 import { StructuredResumeEditor } from "@/components/structured-resume-editor";
 import { ResumeTemplateCenter } from "@/components/resume-template-center";
 import { ResumeTemplateSelector } from "@/components/resume-template-selector";
+import { recommendResumeTemplates } from "@/lib/resume-template-recommendation.js";
 import { normalizeResumeMarkdown } from "@/lib/resume-formatting.js";
 import {
   deleteUserResume,
   fetchUserResume,
   getResumeStateAfterCloudDelete,
+  listOptimizationRecords,
   listUserResumes,
   saveResumeWithPersistence,
   saveUserResume,
+  saveOptimizationRecord,
   serializeResumeForDatabase,
 } from "@/lib/resume-persistence.js";
-import { DEFAULT_TEMPLATE_ID, getResumeTemplate, normalizeResumeTemplateId } from "@/lib/resume-templates.js";
+import { DEFAULT_TEMPLATE_ID, getResumeTemplate, normalizeResumeTemplateId, RESUME_TEMPLATES } from "@/lib/resume-templates.js";
 import { renderTemplateExportHtml } from "@/lib/resume-template-rendering.js";
 import {
   EMPTY_STRUCTURED_RESUME,
@@ -200,6 +204,14 @@ export default function Page() {
   const [diagnosisMarkdown, setDiagnosisMarkdown] = useState("");
   const [optimization, setOptimization] = useState<Optimization | null>(null);
   const [busy, setBusy] = useState<"diagnose" | "optimize" | "flow" | "import" | null>(null);
+  const [optimizingModule, setOptimizingModule] = useState<string | null>(null);
+  const [recommendOpen, setRecommendOpen] = useState(false);
+  const [recommendTargetRole, setRecommendTargetRole] = useState("");
+  const [recommendWorkYears, setRecommendWorkYears] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyList, setHistoryList] = useState<Array<{ id: string; type: string; input_summary: string; output_summary: string; model_tier: string; created_at: string }>>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
   const [error, setError] = useState("");
   const [compareOpen, setCompareOpen] = useState(false);
   const [templateCenterOpen, setTemplateCenterOpen] = useState(false);
@@ -363,10 +375,11 @@ export default function Page() {
         }),
       });
       const data = await response.json();
-      if (!response.ok || data.error) throw new Error(data.error || "诊断失败");
-      setDiagnosis(data.structured);
-      setDiagnosisMarkdown(data.diagnosis || "");
-      return data.structured as Diagnosis;
+     if (!response.ok || data.error) throw new Error(data.error || "诊断失败");
+     setDiagnosis(data.structured);
+     setDiagnosisMarkdown(data.diagnosis || "");
+      saveRecord("diagnose", resume.position || "简历诊断", `得分 ${data.structured?.overallScore ?? "?"}`, data.modelTier || "");
+     return data.structured as Diagnosis;
     } catch (exception) {
       setError(getErrorMessage(exception));
       return null;
@@ -404,6 +417,7 @@ export default function Page() {
       setOptimization(result);
       updateResume({ ...resume, optimized_content: optimizedMarkdown, optimizedStructuredResume });
       setVersion("optimized");
+      saveRecord("optimize", resume.position || "简历优化", result.editSummary?.slice(0, 2).join("；") || "优化完成", data.modelTier || "");
     } catch (exception) {
       setError(getErrorMessage(exception));
     } finally {
@@ -427,6 +441,82 @@ export default function Page() {
     windowRef.document.write(html);
     windowRef.document.close();
     setTimeout(() => windowRef.print(), 300);
+  }
+
+  async function handleOptimizeModule(moduleName: string) {
+    setOptimizingModule(moduleName);
+    setError("");
+    try {
+      const response = await fetch("/api/optimize-module", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          module: moduleName,
+          structuredResume: resume.structuredResume,
+          userType,
+          targetRole: resume.position,
+          jdText: jdEnabled ? jdText : "",
+          strength: workflowMode === "fast" ? "professional" : strength,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || data.error) throw new Error(data.error || "模块优化失败");
+      const nextStructured = { ...resume.structuredResume, [moduleName]: data.optimizedModule };
+      const markdown = renderStructuredResumeV1Markdown(nextStructured);
+      updateResume({ ...resume, structuredResume: nextStructured, original_content: normalizeResumeMarkdown(markdown) });
+      setOptimization((prev) => prev ? { ...prev, editSummary: [...(data.optimization?.editSummary || []), ...(prev.editSummary || [])] } : null);
+    } catch (exception) {
+      setError(getErrorMessage(exception));
+    } finally {
+      setOptimizingModule(null);
+    }
+  }
+
+  async function downloadWord() {
+    const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = await import("docx");
+    const resume = normalizeStructuredResumeV1(currentStructuredResume);
+    const children: InstanceType<typeof Paragraph>[] = [];
+    if (resume.basics.name) children.push(new Paragraph({ text: resume.basics.name, heading: HeadingLevel.TITLE, alignment: AlignmentType.CENTER }));
+    const contactParts = [resume.basics.phone, resume.basics.email, resume.basics.location].filter(Boolean);
+    if (contactParts.length) children.push(new Paragraph({ children: [new TextRun({ text: contactParts.join(" | "), size: 20 })], alignment: AlignmentType.CENTER }));
+    if (resume.basics.job_target) children.push(new Paragraph({ children: [new TextRun({ text: `求职意向：${resume.basics.job_target}`, size: 20 })], alignment: AlignmentType.CENTER }));
+    children.push(new Paragraph({ text: "" }));
+    const addSection = (title: string) => children.push(new Paragraph({ text: title, heading: HeadingLevel.HEADING_2 }));
+    const addBullet = (text: string) => children.push(new Paragraph({ text: `• ${text}`, spacing: { after: 60 } }));
+    addSection("教育经历");
+    for (const education of resume.education) {
+      const parts = [education.school, education.major, education.degree, education.time_range].filter(Boolean);
+      if (parts.length) children.push(new Paragraph({ children: [new TextRun({ text: parts.join(" - "), bold: true, size: 22 })] }));
+      if (education.gpa) addBullet(`GPA: ${education.gpa}`);
+      if (education.courses?.length) addBullet(`主修课程: ${education.courses.join("、")}`);
+    }
+    addSection("工作/实习经历");
+    for (const work of resume.work) {
+      const parts = [work.company, work.position, work.time_range].filter(Boolean);
+      if (parts.length) children.push(new Paragraph({ children: [new TextRun({ text: parts.join(" - "), bold: true, size: 22 })] }));
+      if (work.job_content) addBullet(work.job_content);
+      if (work.job_result?.length) for (const r of work.job_result) if (r) addBullet(r);
+    }
+    addSection("项目经历");
+    for (const project of resume.projects) {
+      const parts = [project.project_name, project.role].filter(Boolean);
+      if (parts.length) children.push(new Paragraph({ children: [new TextRun({ text: parts.join(" - "), bold: true, size: 22 })] }));
+      if (project.project_intro) addBullet(project.project_intro);
+      if (project.duty) addBullet(project.duty);
+      if (project.achievement?.length) for (const a of project.achievement) if (a) addBullet(a);
+    }
+    addSection("专业技能");
+    if (resume.skills.skill_hard?.length) addBullet(`硬技能: ${resume.skills.skill_hard.join("、")}`);
+    if (resume.skills.skill_soft?.length) addBullet(`软技能: ${resume.skills.skill_soft.join("、")}`);
+    if (resume.skills.certificate_list?.length) addBullet(`证书: ${resume.skills.certificate_list.join("、")}`);
+    const doc = new Document({ sections: [{ children }] });
+    const blob = await Packer.toBlob(doc);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${resume.basics.name || "简历"}.docx`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   async function handleSaveResume() {
@@ -563,9 +653,43 @@ export default function Page() {
     setCloudSaveStatus("idle");
     setVersion("original");
     setDiagnosis(null);
-    setOptimization(null);
     setDiagnosisMarkdown("");
     setError("");
+    setOptimization(null);
+  }
+
+  async function openHistory() {
+    setHistoryOpen(true);
+    setHistoryError("");
+    if (demo) {
+      setHistoryList([]);
+      return;
+    }
+    setHistoryLoading(true);
+    try {
+      const rows = await listOptimizationRecords(supabase, { resumeId: currentResumeId || undefined });
+      setHistoryList(rows);
+    } catch (exception) {
+      setHistoryError(getErrorMessage(exception));
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  async function saveRecord(type: string, inputSummary: string, outputSummary: string, modelTier: string) {
+    if (demo || !user) return;
+    try {
+      await saveOptimizationRecord(supabase, {
+        userId: user.id,
+        resumeId: currentResumeId || undefined,
+        type,
+        inputSummary: inputSummary.slice(0, 500),
+        outputSummary: outputSummary.slice(0, 500),
+        modelTier,
+      });
+    } catch {
+      // non-critical, silent
+    }
   }
 
   if (!user) {
@@ -726,6 +850,7 @@ export default function Page() {
           <div className="grid grid-cols-2 gap-2">
             <Button variant="ghost" size="sm" disabled={!hasOptimized} onClick={() => setCompareOpen(true)}><GitCompare className="mr-1 h-3 w-3" />对比</Button>
             <Button variant="ghost" size="sm" disabled={!currentMarkdown} onClick={downloadPdf}><Download className="mr-1 h-3 w-3" />PDF</Button>
+            <Button variant="ghost" size="sm" disabled={!currentMarkdown} onClick={downloadWord}><FileText className="mr-1 h-3 w-3" />Word</Button>
             <Button variant="ghost" size="sm" onClick={resetResume}><Trash2 className="mr-1 h-3 w-3" />清空</Button>
             <Button variant="ghost" size="sm" onClick={handleLogout}><LogOut className="mr-1 h-3 w-3" />退出</Button>
           </div>
@@ -750,9 +875,17 @@ export default function Page() {
             <LayoutTemplate className="mr-1 h-3 w-3" />
             <span>模板中心</span>
           </Button>
+          <Button variant="outline" size="sm" onClick={() => setRecommendOpen(true)}>
+            <Sparkles className="mr-1 h-3 w-3" />
+            <span>智能推荐</span>
+          </Button>
           <Button variant="outline" size="sm" onClick={openResumeList}>
             <FileText className="mr-1 h-3 w-3" />
             <span>我的简历</span>
+          </Button>
+          <Button variant="outline" size="sm" onClick={openHistory}>
+            <Clock className="mr-1 h-3 w-3" />
+            <span>优化记录</span>
           </Button>
           <Button variant="outline" size="sm" onClick={() => setEditorOpen(!editorOpen)}>
             {editorOpen ? <Eye className="mr-1 h-3 w-3" /> : <Edit3 className="mr-1 h-3 w-3" />}
@@ -909,7 +1042,7 @@ export default function Page() {
               </div>
             </div>
             {editorMode === "structured" ? (
-              <StructuredResumeEditor structuredResume={currentStructuredResume} userType={userType} onChange={handleStructuredResumeChange} />
+              <StructuredResumeEditor structuredResume={currentStructuredResume} userType={userType} onChange={handleStructuredResumeChange} onOptimizeModule={handleOptimizeModule} optimizingModule={optimizingModule} />
             ) : (
               <Textarea
                 className="flex-1 resize-none rounded-none border-0 p-3 font-mono text-xs leading-relaxed focus-visible:ring-0 sm:p-4"
@@ -957,6 +1090,69 @@ export default function Page() {
         }}
       />
 
+      <Dialog open={recommendOpen} onOpenChange={setRecommendOpen}>
+        <DialogContent className="max-h-[92svh] w-[calc(100vw-1rem)] max-w-2xl overflow-auto p-4 sm:p-6">
+          <DialogHeader>
+            <DialogTitle>AI 智能模板推荐</DialogTitle>
+            <DialogDescription>填写基本信息，AI 会为你推荐最合适的简历模板。</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs">目标岗位</Label>
+                <Input className="h-8 text-xs" placeholder="例如：产品经理" value={recommendTargetRole} onChange={(e) => setRecommendTargetRole(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">工作年限</Label>
+                <Input className="h-8 text-xs" placeholder="例如：3年" value={recommendWorkYears} onChange={(e) => setRecommendWorkYears(e.target.value)} />
+              </div>
+            </div>
+            {(recommendTargetRole || recommendWorkYears) && (() => {
+              const recommendations = recommendResumeTemplates({
+                userType: recommendWorkYears.includes("应届") || recommendWorkYears.includes("实习") ? "fresh_graduate"
+                  : recommendWorkYears.includes("10") || recommendWorkYears.includes("资深") || recommendWorkYears.includes("高级") ? "senior"
+                  : userType,
+                targetRole: recommendTargetRole || resume.position,
+                structuredResume: currentStructuredResume,
+              });
+              return (
+                <div className="space-y-3">
+                  {recommendations.map((rec) => {
+                    const template = RESUME_TEMPLATES.find((t: { id: string }) => t.id === rec.templateId);
+                    if (!template) return null;
+                    const isCurrent = resume.templateId === rec.templateId;
+                    return (
+                      <div key={rec.templateId} className="rounded-md border bg-white p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold">{template.name}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">{template.description}</p>
+                            <p className="mt-2 text-xs text-blue-700">推荐理由：{rec.reason}</p>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant={isCurrent ? "outline" : "default"}
+                            disabled={isCurrent}
+                            onClick={() => {
+                              updateResume((current) => ({ ...current, templateId: rec.templateId }));
+                              setRecommendOpen(false);
+                            }}
+                          >
+                            {isCurrent ? "使用中" : "选用"}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+          <DialogFooter>
+            <Button size="sm" variant="outline" onClick={() => setRecommendOpen(false)}>关闭</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={resumeListOpen} onOpenChange={setResumeListOpen}>
         <DialogContent className="max-h-[92svh] w-[calc(100vw-1rem)] max-w-3xl overflow-auto p-4 sm:p-6">
           <DialogHeader>
@@ -1032,6 +1228,68 @@ export default function Page() {
           <div className="text-sm"><ReactMarkdown>{diagnosisMarkdown}</ReactMarkdown></div>
           <DialogFooter>
             <Button size="sm" onClick={() => setDiagnosisMarkdown("")}>关闭</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+        <DialogContent className="max-h-[92svh] w-[calc(100vw-1rem)] max-w-2xl overflow-auto p-4 sm:p-6">
+          <DialogHeader>
+            <DialogTitle>优化记录</DialogTitle>
+            <DialogDescription>
+              {demo ? "Demo 模式不保存操作记录。" : "查看诊断和优化操作的历史记录。"}
+            </DialogDescription>
+          </DialogHeader>
+
+          {demo ? (
+            <div className="rounded-md border bg-amber-50 p-4 text-sm text-amber-800">
+              当前是 Demo 模式，操作记录仅登录后可见。
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {historyLoading && (
+                <div className="flex items-center gap-2 rounded-md border bg-white p-4 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  正在加载操作记录
+                </div>
+              )}
+
+              {historyError && (
+                <div className="rounded-md border border-red-100 bg-red-50 p-3 text-sm text-red-700">
+                  {historyError}
+                </div>
+              )}
+
+              {!historyLoading && !historyList.length && !historyError && (
+                <div className="rounded-md border bg-slate-50 p-4 text-sm text-muted-foreground">
+                  暂无操作记录。
+                </div>
+              )}
+
+              {historyList.map((record) => (
+                <div key={record.id} className="rounded-md border bg-white p-4">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className={`inline-flex rounded border px-1.5 py-0.5 text-[10px] font-semibold ${record.type === "diagnose" ? "text-blue-700 bg-blue-50 border-blue-100" : "text-green-700 bg-green-50 border-green-100"}`}>
+                          {record.type === "diagnose" ? "诊断" : "优化"}
+                        </span>
+                        {record.model_tier && (
+                          <span className="text-[10px] text-muted-foreground">{record.model_tier}</span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs text-slate-700 truncate">{record.input_summary || "无摘要"}</p>
+                      <p className="mt-1 text-xs text-slate-500 truncate">{record.output_summary || "无输出摘要"}</p>
+                    </div>
+                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">{formatCloudTime(record.created_at)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button size="sm" variant="outline" onClick={() => setHistoryOpen(false)}>关闭</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

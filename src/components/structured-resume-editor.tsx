@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Sparkles, Trash2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,8 @@ type StructuredResumeEditorProps = {
   structuredResume: Record<string, unknown>;
   userType: string;
   onChange: (nextStructuredResume: Record<string, unknown>) => void;
+  onOptimizeModule?: (moduleName: string) => void;
+  optimizingModule?: string | null;
 };
 
 type ArraySection = "education" | "work" | "projects";
@@ -51,10 +53,31 @@ function MultiLineField({ label, value, placeholder, onChange }: { label: string
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ title, moduleName, children, onOptimizeModule, optimizingModule }: {
+  title: string;
+  moduleName?: string;
+  children: ReactNode;
+  onOptimizeModule?: (moduleName: string) => void;
+  optimizingModule?: string | null;
+}) {
   return (
     <section className="space-y-3 border-b px-3 py-4 last:border-b-0 sm:px-4">
-      <h3 className="text-xs font-semibold text-slate-900">{title}</h3>
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-xs font-semibold text-slate-900">{title}</h3>
+        {moduleName && onOptimizeModule && (
+          <Button
+            className="h-6 px-2 text-[10px]"
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={optimizingModule === moduleName}
+            onClick={() => onOptimizeModule(moduleName)}
+          >
+            {optimizingModule === moduleName ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+            AI 优化
+          </Button>
+        )}
+      </div>
       {children}
     </section>
   );
@@ -85,7 +108,7 @@ function RepeatedSection({
   );
 }
 
-export function StructuredResumeEditor({ structuredResume, userType, onChange }: StructuredResumeEditorProps) {
+export function StructuredResumeEditor({ structuredResume, userType, onChange, onOptimizeModule, optimizingModule }: StructuredResumeEditorProps) {
   const latestDraftRef = useRef<Record<string, unknown>>(structuredResume);
 
   useEffect(() => {
@@ -120,7 +143,7 @@ export function StructuredResumeEditor({ structuredResume, userType, onChange }:
 
   return (
     <div className="h-full overflow-auto bg-white">
-      <Section title="个人信息">
+      <Section title="个人信息" moduleName="basics" onOptimizeModule={onOptimizeModule} optimizingModule={optimizingModule}>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <Field label="姓名" value={basics.name} onChange={(value) => commit(updateBasicsField(latestDraftRef.current, "name", value))} />
           <Field label="电话" value={basics.phone} onChange={(value) => commit(updateBasicsField(latestDraftRef.current, "phone", value))} />
@@ -208,7 +231,7 @@ export function StructuredResumeEditor({ structuredResume, userType, onChange }:
         })}
       </RepeatedSection>
 
-      <Section title="专业技能">
+      <Section title="专业技能" moduleName="skills" onOptimizeModule={onOptimizeModule} optimizingModule={optimizingModule}>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MultiLineField label="硬技能" value={lines(skills.skill_hard)} onChange={(value) => commit(updateSkillsField(latestDraftRef.current, "skill_hard", value))} />
           <MultiLineField label="软技能" value={lines(skills.skill_soft)} onChange={(value) => commit(updateSkillsField(latestDraftRef.current, "skill_soft", value))} />
@@ -217,7 +240,7 @@ export function StructuredResumeEditor({ structuredResume, userType, onChange }:
         </div>
       </Section>
 
-      <Section title="补充信息">
+      <Section title="补充信息" moduleName="optional" onOptimizeModule={onOptimizeModule} optimizingModule={optimizingModule}>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {(userType === "fresh_graduate" || userType === "auto") && (
             <MultiLineField label="校园经历" value={lines(optional.campus_exp)} onChange={(value) => commit(updateOptionalField(latestDraftRef.current, "campus_exp", value))} />
