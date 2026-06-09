@@ -3,10 +3,10 @@ import mammoth from "mammoth";
 import {
   buildFallbackStructuredResume,
   normalizeStructuredResume,
-  renderStructuredResumeMarkdown,
 } from "@/lib/resume-structured-extraction.js";
 import { normalizeResumeMarkdown } from "@/lib/resume-formatting.js";
 import { safeParseJsonObject } from "@/lib/ai-resume-contract.js";
+import { normalizeStructuredResumeV1, renderStructuredResumeV1Markdown } from "@/lib/resume-schema.js";
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
@@ -201,15 +201,16 @@ export async function POST(req: NextRequest) {
 
     const rawText = text.replace(/\r\n/g,"\n").replace(/\n{4,}/g,"\n\n\n").trim();
     const modelStructured = await callDeepSeekForExtraction(rawText);
-    const fallbackStructured = modelStructured ? null : buildFallbackStructuredResume(rawText);
-    const structured = modelStructured || fallbackStructured;
+    const fallbackStructured = buildFallbackStructuredResume(rawText);
+    const structured = normalizeStructuredResumeV1(modelStructured || fallbackStructured);
     const markdown = modelStructured
-      ? renderStructuredResumeMarkdown(structured)
+      ? renderStructuredResumeV1Markdown(structured)
       : normalizeResumeMarkdown(rawText);
 
     return NextResponse.json({
       text: rawText,
       markdown,
+      compatMarkdown: markdown,
       structured,
       extractionMode: modelStructured ? "deepseek" : "fallback-rules",
       fileName,

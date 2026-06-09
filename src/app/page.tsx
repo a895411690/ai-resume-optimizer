@@ -10,6 +10,7 @@ import {
   Eye,
   FileText,
   GitCompare,
+  LayoutTemplate,
   Loader2,
   LogOut,
   Monitor,
@@ -27,13 +28,25 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { ResumePreview } from "@/components/resume-preview";
+import { StructuredResumeEditor } from "@/components/structured-resume-editor";
+import { ResumeTemplateCenter } from "@/components/resume-template-center";
+import { ResumeTemplateSelector } from "@/components/resume-template-selector";
 import { normalizeResumeMarkdown } from "@/lib/resume-formatting.js";
+import { DEFAULT_TEMPLATE_ID, normalizeResumeTemplateId } from "@/lib/resume-templates.js";
+import { renderTemplateExportHtml } from "@/lib/resume-template-rendering.js";
+import {
+  EMPTY_STRUCTURED_RESUME,
+  migrateMarkdownToStructuredResumeV1,
+  normalizeStructuredResumeV1,
+  renderStructuredResumeV1Markdown,
+} from "@/lib/resume-schema.js";
 
 const STORAGE_KEY = "resume_demo";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 type Version = "original" | "optimized";
+type EditorMode = "structured" | "markdown";
 type WorkflowMode = "fast" | "professional";
 type UserType = "auto" | "fresh_graduate" | "junior" | "career_switcher" | "senior";
 type Strength = "conservative" | "professional" | "strong";
@@ -43,6 +56,9 @@ type ResumeState = {
   position: string;
   original_content: string;
   optimized_content: string;
+  structuredResume: Record<string, unknown>;
+  optimizedStructuredResume: Record<string, unknown> | null;
+  templateId: string;
 };
 
 type User = { id: string; email: string };
@@ -104,6 +120,9 @@ const EMPTY_RESUME: ResumeState = {
   position: "",
   original_content: "",
   optimized_content: "",
+  structuredResume: EMPTY_STRUCTURED_RESUME,
+  optimizedStructuredResume: null,
+  templateId: DEFAULT_TEMPLATE_ID,
 };
 
 function loadResume(): ResumeState {
@@ -111,10 +130,18 @@ function loadResume(): ResumeState {
   try {
     const data = localStorage.getItem(STORAGE_KEY);
     const parsed = data ? { ...EMPTY_RESUME, ...JSON.parse(data) } : EMPTY_RESUME;
+    const originalContent = normalizeResumeMarkdown(parsed.original_content || "");
+    const optimizedContent = normalizeResumeMarkdown(parsed.optimized_content || "");
+    const structuredResume = parsed.structuredResume && parsed.structuredResume.basics
+      ? normalizeStructuredResumeV1(parsed.structuredResume)
+      : (originalContent ? migrateMarkdownToStructuredResumeV1(originalContent) : EMPTY_STRUCTURED_RESUME);
     return {
       ...parsed,
-      original_content: normalizeResumeMarkdown(parsed.original_content || ""),
-      optimized_content: normalizeResumeMarkdown(parsed.optimized_content || ""),
+      original_content: originalContent,
+      optimized_content: optimizedContent,
+      structuredResume,
+      optimizedStructuredResume: parsed.optimizedStructuredResume ? normalizeStructuredResumeV1(parsed.optimizedStructuredResume) : null,
+      templateId: normalizeResumeTemplateId(parsed.templateId),
     };
   } catch {
     return EMPTY_RESUME;
@@ -139,20 +166,13 @@ function severityClass(severity: TopIssue["severity"]) {
   return "text-slate-600 bg-slate-50 border-slate-100";
 }
 
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 export default function Page() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [user, setUser] = useState<User | null>(null);
   const [demo, setDemo] = useState(false);
   const [resume, setResume] = useState<ResumeState>(loadResume);
   const [version, setVersion] = useState<Version>("original");
+  const [editorMode, setEditorMode] = useState<EditorMode>("structured");
   const [editorOpen, setEditorOpen] = useState(true);
   const [workflowMode, setWorkflowMode] = useState<WorkflowMode>("fast");
   const [userType, setUserType] = useState<UserType>("auto");
@@ -165,6 +185,7 @@ export default function Page() {
   const [busy, setBusy] = useState<"diagnose" | "optimize" | "flow" | "import" | null>(null);
   const [error, setError] = useState("");
   const [compareOpen, setCompareOpen] = useState(false);
+  const [templateCenterOpen, setTemplateCenterOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -174,17 +195,31 @@ export default function Page() {
   const hasOriginal = Boolean(resume.original_content.trim());
   const hasOptimized = Boolean(resume.optimized_content.trim());
   const currentMarkdown = version === "original" ? resume.original_content : resume.optimized_content;
+  const currentStructuredResume = version === "optimized"
+    ? (resume.optimizedStructuredResume || (resume.optimized_content ? migrateMarkdownToStructuredResumeV1(resume.optimized_content) : resume.structuredResume))
+    : resume.structuredResume;
 
-  function updateResume(next: ResumeState) {
-    setResume(next);
-    saveResume(next);
+  function updateResume(next: ResumeState | ((current: ResumeState) => ResumeState)) {
+    setResume((current) => {
+      const resolved = typeof next === "function" ? next(current) : next;
+      saveResume(resolved);
+      return resolved;
+    });
   }
 
   function updateCurrentMarkdown(content: string) {
+    const structured = migrateMarkdownToStructuredResumeV1(content);
     const next = version === "original"
-      ? { ...resume, original_content: content }
-      : { ...resume, optimized_content: content };
+      ? { ...resume, original_content: content, structuredResume: structured }
+      : { ...resume, optimized_content: content, optimizedStructuredResume: structured };
     updateResume(next);
+  }
+
+  function handleStructuredResumeChange(nextStructuredResume: Record<string, unknown>) {
+    const markdown = renderStructuredResumeV1Markdown(nextStructuredResume);
+    updateResume((current) => version === "original"
+      ? { ...current, structuredResume: nextStructuredResume, original_content: markdown }
+      : { ...current, optimizedStructuredResume: nextStructuredResume, optimized_content: markdown });
   }
 
   function formatCurrentMarkdown() {
@@ -213,7 +248,9 @@ export default function Page() {
 
       const formatted = formatImportedText(data.markdown || data.text || "");
       if (formatted.length < 30) throw new Error("文件解析出的文本过少，请改为粘贴简历正文。");
-      updateResume({ ...resume, original_content: formatted });
+      const structured = data.structured ? normalizeStructuredResumeV1(data.structured) : migrateMarkdownToStructuredResumeV1(formatted);
+      const compatMarkdown = data.markdown || renderStructuredResumeV1Markdown(structured);
+      updateResume({ ...resume, original_content: normalizeResumeMarkdown(compatMarkdown), structuredResume: structured });
       setVersion("original");
     } catch (exception) {
       setError(`导入失败：${getErrorMessage(exception)}`);
@@ -272,6 +309,7 @@ export default function Page() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           markdown: resume.original_content,
+          structuredResume: resume.structuredResume,
           userType,
           targetRole: resume.position,
           jdText: jdEnabled ? jdText : "",
@@ -301,6 +339,7 @@ export default function Page() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           markdown: resume.original_content,
+          structuredResume: resume.structuredResume,
           userType,
           targetRole: resume.position,
           jdText: jdEnabled ? jdText : "",
@@ -312,8 +351,11 @@ export default function Page() {
       if (!response.ok || data.error) throw new Error(data.error || "优化失败");
       const result = data.optimization as Optimization;
       const optimizedMarkdown = normalizeResumeMarkdown(result.optimizedMarkdown || data.optimized || "");
+      const optimizedStructuredResume = data.structuredResume
+        ? normalizeStructuredResumeV1(data.structuredResume)
+        : migrateMarkdownToStructuredResumeV1(optimizedMarkdown);
       setOptimization(result);
-      updateResume({ ...resume, optimized_content: optimizedMarkdown });
+      updateResume({ ...resume, optimized_content: optimizedMarkdown, optimizedStructuredResume });
       setVersion("optimized");
     } catch (exception) {
       setError(getErrorMessage(exception));
@@ -332,17 +374,10 @@ export default function Page() {
 
   function downloadPdf() {
     if (!currentMarkdown) return;
-    const html = escapeHtml(normalizeResumeMarkdown(currentMarkdown))
-      .replace(/^### (.+)$/gm, "<h3>$1</h3>")
-      .replace(/^## (.+)$/gm, "<h2>$1</h2>")
-      .replace(/^# (.+)$/gm, "<h1>$1</h1>")
-      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-      .replace(/^- (.+)$/gm, "<li>$1</li>")
-      .replace(/\n/g, "<br/>")
-      .replace(/((?:<li>.*<\/li><br\/>)+)/g, "<ul>$1</ul>");
+    const html = renderTemplateExportHtml({ title: resume.title, structuredResume: currentStructuredResume, templateId: resume.templateId });
     const windowRef = window.open("", "_blank");
     if (!windowRef) return;
-    windowRef.document.write(`<html><head><meta charset="utf-8"><title>${escapeHtml(resume.title)}</title><style>body{font-family:Arial,sans-serif;max-width:794px;margin:40px auto;padding:20px;font-size:13px;line-height:1.6;color:#111827}h1{text-align:center;border-bottom:2px solid #111827;padding-bottom:12px;font-size:20px}h2{border-bottom:1px solid #d1d5db;margin-top:20px;padding-bottom:4px;font-size:15px}h3{font-size:14px}li{margin-bottom:3px}strong{color:#111827}</style></head><body>${html}</body></html>`);
+    windowRef.document.write(html);
     windowRef.document.close();
     setTimeout(() => windowRef.print(), 300);
   }
@@ -533,6 +568,11 @@ export default function Page() {
             {busy === "import" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Upload className="mr-1 h-3 w-3" />}
             导入
           </Button>
+          <ResumeTemplateSelector value={resume.templateId} onChange={(templateId) => updateResume({ ...resume, templateId })} />
+          <Button variant="outline" size="sm" onClick={() => setTemplateCenterOpen(true)}>
+            <LayoutTemplate className="mr-1 h-3 w-3" />
+            <span>模板中心</span>
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setEditorOpen(!editorOpen)}>
             {editorOpen ? <Eye className="mr-1 h-3 w-3" /> : <Edit3 className="mr-1 h-3 w-3" />}
             {editorOpen ? "预览" : "编辑"}
@@ -555,7 +595,7 @@ export default function Page() {
           ) : (
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:gap-5">
               <div className="min-w-0">
-                <ResumePreview markdown={currentMarkdown} title={resume.title} />
+                <ResumePreview structuredResume={currentStructuredResume} title={resume.title} templateId={resume.templateId} />
               </div>
               <aside className="min-w-0 space-y-4">
                 {diagnosis && (
@@ -658,21 +698,45 @@ export default function Page() {
         {editorOpen && (
           <div className="flex h-[38svh] min-h-48 flex-col border-t bg-white md:h-56">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2 sm:px-4">
-              <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Markdown 编辑器</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">简历编辑器</span>
+                <div className="inline-flex rounded-md border bg-slate-50 p-0.5">
+                  <button
+                    type="button"
+                    className={`rounded px-2 py-1 text-[11px] font-medium ${editorMode === "structured" ? "bg-white text-blue-700 shadow-sm" : "text-muted-foreground hover:text-slate-900"}`}
+                    onClick={() => setEditorMode("structured")}
+                  >
+                    结构化
+                  </button>
+                  <button
+                    type="button"
+                    className={`rounded px-2 py-1 text-[11px] font-medium ${editorMode === "markdown" ? "bg-white text-blue-700 shadow-sm" : "text-muted-foreground hover:text-slate-900"}`}
+                    onClick={() => setEditorMode("markdown")}
+                  >
+                    Markdown兼容
+                  </button>
+                </div>
+              </div>
               <div className="flex min-w-0 items-center gap-2">
                 <span className="text-[11px] text-muted-foreground">{version === "original" ? "编辑原始简历" : "编辑优化版本"}</span>
-                <Button className="h-6 px-2 text-[10px]" variant="ghost" size="sm" disabled={!currentMarkdown.trim()} onClick={formatCurrentMarkdown}>
-                  <Wand2 className="mr-1 h-3 w-3" />
-                  格式化
-                </Button>
+                {editorMode === "markdown" && (
+                  <Button className="h-6 px-2 text-[10px]" variant="ghost" size="sm" disabled={!currentMarkdown.trim()} onClick={formatCurrentMarkdown}>
+                    <Wand2 className="mr-1 h-3 w-3" />
+                    格式化
+                  </Button>
+                )}
               </div>
             </div>
-            <Textarea
-              className="flex-1 resize-none rounded-none border-0 p-3 font-mono text-xs leading-relaxed focus-visible:ring-0 sm:p-4"
-              placeholder="# 我的简历&#10;&#10;## 个人信息&#10;- **姓名**：张三&#10;- **电话**：13800138000&#10;&#10;## 项目经历&#10;- 描述你的真实经历、行动和结果"
-              value={currentMarkdown}
-              onChange={(event) => updateCurrentMarkdown(event.target.value)}
-            />
+            {editorMode === "structured" ? (
+              <StructuredResumeEditor structuredResume={currentStructuredResume} userType={userType} onChange={handleStructuredResumeChange} />
+            ) : (
+              <Textarea
+                className="flex-1 resize-none rounded-none border-0 p-3 font-mono text-xs leading-relaxed focus-visible:ring-0 sm:p-4"
+                placeholder="# 我的简历&#10;&#10;## 个人信息&#10;- **姓名**：张三&#10;- **电话**：13800138000&#10;&#10;## 项目经历&#10;- 描述你的真实经历、行动和结果"
+                value={currentMarkdown}
+                onChange={(event) => updateCurrentMarkdown(event.target.value)}
+              />
+            )}
           </div>
         )}
       </main>
@@ -698,6 +762,19 @@ export default function Page() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ResumeTemplateCenter
+        open={templateCenterOpen}
+        value={resume.templateId}
+        userType={userType}
+        targetRole={resume.position}
+        structuredResume={currentStructuredResume}
+        onOpenChange={setTemplateCenterOpen}
+        onSelect={(templateId) => {
+          updateResume((current) => ({ ...current, templateId }));
+          setTemplateCenterOpen(false);
+        }}
+      />
 
       <Dialog open={Boolean(diagnosisMarkdown) && workflowMode === "fast"} onOpenChange={() => setDiagnosisMarkdown("")}>
         <DialogContent className="max-h-[85svh] w-[calc(100vw-1rem)] max-w-2xl overflow-auto p-4 sm:p-6">

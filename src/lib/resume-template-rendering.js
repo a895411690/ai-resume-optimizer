@@ -1,0 +1,159 @@
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { normalizeStructuredResumeV1 } = require("./resume-schema.js");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { normalizeResumeTemplateId } = require("./resume-templates.js");
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function compact(values) {
+  return values.map((item) => String(item || "").trim()).filter(Boolean);
+}
+
+function titleLine(parts) {
+  return compact(parts).join("｜");
+}
+
+function buildStructuredResumeViewModel(value) {
+  const resume = normalizeStructuredResumeV1(value);
+  const sections = [];
+
+  if (resume.optional.self_evaluation.length) {
+    sections.push({ title: "自我评价", items: resume.optional.self_evaluation.map((item) => ({ heading: "", bullets: [item] })) });
+  }
+
+  if (resume.education.length) {
+    sections.push({
+      title: "教育经历",
+      items: resume.education.map((item) => ({
+        heading: titleLine([item.school, item.degree, item.major, item.time_range]),
+        bullets: [...item.courses, ...item.honors],
+      })),
+    });
+  }
+
+  if (resume.work.length) {
+    sections.push({
+      title: "工作/实习经历",
+      items: resume.work.map((item) => ({
+        heading: titleLine([item.company, item.position, item.time_range]),
+        bullets: compact([item.job_content, ...item.job_result]),
+      })),
+    });
+  }
+
+  if (resume.projects.length) {
+    sections.push({
+      title: "项目经历",
+      items: resume.projects.map((item) => ({
+        heading: titleLine([item.project_name, item.role]),
+        bullets: compact([item.project_intro, item.duty, ...item.achievement]),
+      })),
+    });
+  }
+
+  const skills = [...resume.skills.skill_hard, ...resume.skills.skill_soft, ...resume.skills.skill_level];
+  if (skills.length) {
+    sections.push({ title: "专业技能", items: [{ heading: "", bullets: skills }] });
+  }
+
+  if (resume.skills.certificate_list.length) {
+    sections.push({ title: "技能证书", items: [{ heading: "", bullets: resume.skills.certificate_list }] });
+  }
+
+  if (resume.optional.campus_exp.length) {
+    sections.push({ title: "校园经历", items: resume.optional.campus_exp.map((item) => ({ heading: "", bullets: [item] })) });
+  }
+
+  if (resume.optional.manage_exp.length) {
+    sections.push({ title: "团队管理", items: resume.optional.manage_exp.map((item) => ({ heading: "", bullets: [item] })) });
+  }
+
+  return {
+    title: resume.basics.name || "我的简历",
+    contactItems: compact([resume.basics.phone, resume.basics.email, resume.basics.location, resume.basics.job_target]),
+    skills,
+    sections,
+  };
+}
+
+function getPreviewTemplateClasses(templateId) {
+  const id = normalizeResumeTemplateId(templateId);
+  const basePage = "mx-auto min-w-0 bg-white p-4 text-sm leading-relaxed shadow-sm sm:p-8 md:max-w-[794px] md:p-12 md:shadow-lg lg:min-h-[1123px] print:shadow-none print:p-0";
+  if (id === "modern") {
+    return {
+      page: `${basePage} md:p-0`,
+      header: "border-b border-slate-200 p-6 text-left md:border-b-0 md:bg-slate-900 md:text-white",
+      body: "md:grid md:grid-cols-[210px_minmax(0,1fr)]",
+      main: "min-w-0 p-4 sm:p-8 md:p-10",
+      sidebar: "border-b bg-slate-50 p-4 text-xs sm:p-6 md:border-b-0 md:bg-slate-900 md:text-slate-100",
+      sectionTitle: "mb-3 mt-5 break-words border-b border-gray-300 pb-1 text-base font-bold text-gray-800 sm:mt-6 sm:text-lg",
+    };
+  }
+  if (id === "executive") {
+    return {
+      page: basePage,
+      header: "mb-6 border-l-4 border-blue-700 pb-4 pl-4 text-left",
+      body: "",
+      main: "",
+      sidebar: "",
+      sectionTitle: "mb-3 mt-5 break-words border-b border-blue-200 pb-1 text-base font-bold uppercase text-blue-700 sm:mt-6 sm:text-lg",
+    };
+  }
+  return {
+    page: basePage,
+    header: "mb-6 border-b-2 border-gray-800 pb-4 text-center",
+    body: "",
+    main: "",
+    sidebar: "",
+    sectionTitle: "mb-3 mt-5 break-words border-b border-gray-300 pb-1 text-base font-bold text-gray-800 sm:mt-6 sm:text-lg",
+  };
+}
+
+function getTemplatePrintCss(templateId) {
+  const id = normalizeResumeTemplateId(templateId);
+  const base = "body{font-family:Arial,'Microsoft YaHei',sans-serif;max-width:794px;margin:40px auto;padding:20px;font-size:13px;line-height:1.6;color:#111827}h1{font-size:22px;margin:0}h2{margin-top:20px;padding-bottom:4px;font-size:15px}h3{font-size:14px;margin-bottom:4px}li{margin-bottom:3px}.contact{font-size:12px;color:#4b5563;margin-top:8px}.section{break-inside:avoid}.resume-body{display:block}";
+  if (id === "modern") {
+    return `${base}.resume-body{display:grid;grid-template-columns:210px 1fr;gap:28px}.sidebar{background:#111827;color:#f8fafc;padding:24px}.main{padding:24px 0}.contact{color:#cbd5e1}h2{border-bottom:1px solid #d1d5db}.skills{margin-top:18px}`;
+  }
+  if (id === "executive") {
+    return `${base}header{border-left:5px solid #1d4ed8;padding-left:14px;border-bottom:0}h2{border-bottom:2px solid #bfdbfe;color:#1d4ed8;text-transform:uppercase}`;
+  }
+  return `${base}header{text-align:center;border-bottom:2px solid #111827;padding-bottom:12px}h2{border-bottom:1px solid #d1d5db}`;
+}
+
+function renderSectionHtml(section) {
+  const items = section.items.map((item) => {
+    const heading = item.heading ? `<h3>${escapeHtml(item.heading)}</h3>` : "";
+    const bullets = item.bullets.length ? `<ul>${item.bullets.map((bullet) => `<li>${escapeHtml(bullet)}</li>`).join("")}</ul>` : "";
+    return `<div class="item">${heading}${bullets}</div>`;
+  }).join("");
+  return `<section class="section"><h2>${escapeHtml(section.title)}</h2>${items}</section>`;
+}
+
+function renderTemplateExportHtml({ title, structuredResume, templateId }) {
+  const id = normalizeResumeTemplateId(templateId);
+  const view = buildStructuredResumeViewModel(structuredResume);
+  const documentTitle = title || view.title;
+  const contact = view.contactItems.length ? `<div class="contact">${view.contactItems.map(escapeHtml).join(" · ")}</div>` : "";
+  const skills = view.skills.length ? `<div class="skills"><h2>专业技能</h2><ul>${view.skills.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : "";
+  const nonSkillSections = view.sections.filter((section) => section.title !== "专业技能");
+  const sections = nonSkillSections.map(renderSectionHtml).join("");
+  const body = id === "modern"
+    ? `<div class="resume-body"><aside class="sidebar"><header><h1>${escapeHtml(view.title)}</h1>${contact}</header>${skills}</aside><main class="main">${sections}</main></div>`
+    : `<header><h1>${escapeHtml(view.title)}</h1>${contact}</header><main>${view.sections.map(renderSectionHtml).join("")}</main>`;
+
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(documentTitle)}</title><style>${getTemplatePrintCss(id)}</style></head><body data-template="${id}">${body}</body></html>`;
+}
+
+module.exports = {
+  buildStructuredResumeViewModel,
+  getPreviewTemplateClasses,
+  getTemplatePrintCss,
+  renderTemplateExportHtml,
+};

@@ -19,11 +19,13 @@ test("main workspace stacks and avoids fixed desktop widths on mobile", () => {
 
 test("resume preview uses compact mobile sizing before A4 desktop sizing", () => {
   const source = readFileSync(new URL("../src/components/resume-preview.tsx", import.meta.url), "utf8");
+  const renderingSource = readFileSync(new URL("../src/lib/resume-template-rendering.js", import.meta.url), "utf8");
 
   assert.match(source, /h-full min-w-0 overflow-auto/);
-  assert.match(source, /mx-auto min-w-0 bg-white p-4/);
-  assert.match(source, /md:max-w-\[794px\] md:p-12/);
-  assert.match(source, /lg:min-h-\[1123px\]/);
+  assert.match(renderingSource, /mx-auto min-w-0 bg-white p-4/);
+  assert.match(renderingSource, /md:max-w-\[794px\] md:p-12/);
+  assert.match(renderingSource, /lg:min-h-\[1123px\]/);
+  assert.match(renderingSource, /md:grid md:grid-cols-\[210px_minmax\(0,1fr\)\]/);
   assert.match(source, /break-words text-xl/);
   assert.match(source, /<span className="break-words" key=\{item\}>/);
   assert.doesNotMatch(source, /max-w-\[794px\] mx-auto bg-white shadow-lg p-12 min-h-\[1123px\]/);

@@ -5,6 +5,8 @@ import {
   normalizeUserType,
   safeParseJsonObject,
 } from "@/lib/ai-resume-contract.js";
+import { chooseDeepSeekModel } from "@/lib/deepseek-model-router.js";
+import { migrateMarkdownToStructuredResumeV1, normalizeStructuredResumeV1, renderStructuredResumeV1Markdown } from "@/lib/resume-schema.js";
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
@@ -39,7 +41,7 @@ const OPTIMIZE_PROMPT = `你是一位资深简历优化专家。你必须输出�
   "riskNotes": []
 }`;
 
-async function callDeepSeek(messages: Array<{ role: "system" | "user"; content: string }>) {
+async function callDeepSeek(messages: Array<{ role: "system" | "user"; content: string }>, model: string) {
   const response = await fetch(`${DEEPSEEK_BASE_URL}/v1/chat/completions`, {
     method: "POST",
     headers: {
@@ -47,7 +49,7 @@ async function callDeepSeek(messages: Array<{ role: "system" | "user"; content: 
       "Authorization": `Bearer ${DEEPSEEK_API_KEY}`,
     },
     body: JSON.stringify({
-      model: "deepseek-chat",
+      model,
       messages,
       temperature: 0.25,
       max_tokens: 4096,
@@ -67,12 +69,22 @@ async function callDeepSeek(messages: Array<{ role: "system" | "user"; content: 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const markdown = String(body.markdown || "").trim();
+    const structuredResume = body.structuredResume ? normalizeStructuredResumeV1(body.structuredResume) : null;
+    const markdown = String(body.markdown || (structuredResume ? renderStructuredResumeV1Markdown(structuredResume) : "")).trim();
     const targetRole = String(body.targetRole || body.position || "").trim();
     const jdText = String(body.jdText || body.targetJd || "").trim();
     const userType = normalizeUserType(body.userType);
     const strength = body.strength || (body.mode === "targeted" ? "professional" : "conservative");
     const diagnosis = body.structuredDiagnosis || body.diagnosis || buildFallbackDiagnosis({ markdown, userType, targetRole, jdText });
+    const routing = chooseDeepSeekModel({
+      scene: jdText.length > 300 || strength === "strong" ? "optimize_deep" : "module_optimize",
+      textLength: markdown.length,
+      jdLength: jdText.length,
+      workItemCount: structuredResume?.work?.length || 0,
+      userTier: body.userTier || "free",
+      userType,
+      proQuotaRemaining: body.proQuotaRemaining,
+    });
 
     if (markdown.length < 40) {
       return NextResponse.json({ error: "简历内容过短，请补充更多信息后再优化。" }, { status: 400 });
@@ -95,18 +107,21 @@ ${jdText || "未提供"}
 ${typeof diagnosis === "string" ? diagnosis : JSON.stringify(diagnosis)}
 
 原始简历 Markdown：
-${markdown}`;
+${markdown}
+
+结构化简历数据：
+${structuredResume ? JSON.stringify(structuredResume) : "未提供"}`;
 
     let parsed = safeParseJsonObject(await callDeepSeek([
       { role: "system", content: OPTIMIZE_PROMPT },
       { role: "user", content: userMessage },
-    ]));
+    ], routing.model));
 
     if (!parsed) {
       const repaired = await callDeepSeek([
         { role: "system", content: "把用户提供的内容修复为严格 JSON 对象，必须符合优化 schema，不要输出 Markdown 外壳。" },
         { role: "user", content: JSON.stringify({ optimizedMarkdown: markdown, editSummary: [], editExplanations: [], riskNotes: [] }) },
-      ]);
+      ], routing.model);
       parsed = safeParseJsonObject(repaired);
     }
 
@@ -115,9 +130,13 @@ ${markdown}`;
     }
 
     const optimization = normalizeOptimization(parsed, { markdown, diagnosis, strength, targetRole });
+    const optimizedStructuredResume = migrateMarkdownToStructuredResumeV1(optimization.optimizedMarkdown);
     return NextResponse.json({
       optimized: optimization.optimizedMarkdown,
       optimization,
+      structuredResume: optimizedStructuredResume,
+      modelTier: routing.tier,
+      routingReason: routing.reason,
     });
   } catch (error: unknown) {
     return NextResponse.json({ error: errorMessage(error) }, { status: 500 });

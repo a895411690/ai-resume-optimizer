@@ -5,6 +5,8 @@ import {
   normalizeUserType,
   safeParseJsonObject,
 } from "@/lib/ai-resume-contract.js";
+import { chooseDeepSeekModel } from "@/lib/deepseek-model-router.js";
+import { normalizeStructuredResumeV1, renderStructuredResumeV1Markdown } from "@/lib/resume-schema.js";
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
@@ -75,7 +77,7 @@ const DIAGNOSE_PROMPT = `你是一位资深 HR、招聘经理和简历评审专�
   "riskNotes": []
 }`;
 
-async function callDeepSeek(messages: Array<{ role: "system" | "user"; content: string }>) {
+async function callDeepSeek(messages: Array<{ role: "system" | "user"; content: string }>, model: string) {
   const response = await fetch(`${DEEPSEEK_BASE_URL}/v1/chat/completions`, {
     method: "POST",
     headers: {
@@ -83,7 +85,7 @@ async function callDeepSeek(messages: Array<{ role: "system" | "user"; content: 
       "Authorization": `Bearer ${DEEPSEEK_API_KEY}`,
     },
     body: JSON.stringify({
-      model: "deepseek-chat",
+      model,
       messages,
       temperature: 0.2,
       max_tokens: 3072,
@@ -116,10 +118,20 @@ function diagnosisToMarkdown(diagnosis: StructuredDiagnosis) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const markdown = String(body.markdown || "").trim();
+    const structuredResume = body.structuredResume ? normalizeStructuredResumeV1(body.structuredResume) : null;
+    const markdown = String(body.markdown || (structuredResume ? renderStructuredResumeV1Markdown(structuredResume) : "")).trim();
     const targetRole = String(body.targetRole || body.position || "").trim();
     const jdText = String(body.jdText || body.targetJd || "").trim();
     const userType = normalizeUserType(body.userType);
+    const routing = chooseDeepSeekModel({
+      scene: jdText.length > 300 ? "jd_match" : "diagnose_basic",
+      textLength: markdown.length,
+      jdLength: jdText.length,
+      workItemCount: structuredResume?.work?.length || 0,
+      userTier: body.userTier || "free",
+      userType,
+      proQuotaRemaining: body.proQuotaRemaining,
+    });
 
     if (markdown.length < 40) {
       return NextResponse.json({ error: "简历内容过短，请补充更多经历、项目或教育信息后再诊断。" }, { status: 400 });
@@ -140,19 +152,22 @@ JD：
 ${jdText || "未提供"}
 
 简历 Markdown：
-${markdown}`;
+${markdown}
+
+结构化简历数据：
+${structuredResume ? JSON.stringify(structuredResume) : "未提供"}`;
 
     let parsed = safeParseJsonObject(await callDeepSeek([
       { role: "system", content: DIAGNOSE_PROMPT },
       { role: "user", content: userMessage },
-    ]));
+    ], routing.model));
 
     if (!parsed) {
       const fallback = buildFallbackDiagnosis(fallbackInput);
       const repaired = await callDeepSeek([
         { role: "system", content: "把用户提供的内容修复为严格 JSON 对象，必须符合诊断 schema，不要输出 Markdown。" },
         { role: "user", content: JSON.stringify(fallback) },
-      ]);
+      ], routing.model);
       parsed = safeParseJsonObject(repaired);
     }
 
@@ -164,6 +179,8 @@ ${markdown}`;
     return NextResponse.json({
       diagnosis: diagnosisToMarkdown(structured),
       structured,
+      modelTier: routing.tier,
+      routingReason: routing.reason,
     });
   } catch (error: unknown) {
     return NextResponse.json({ error: errorMessage(error) }, { status: 500 });

@@ -33,7 +33,9 @@ test("PDF import keeps full normalized markdown when model extraction falls back
   const source = readFileSync(new URL("../src/app/api/import/route.ts", import.meta.url), "utf8");
 
   assert.match(source, /import \{ normalizeResumeMarkdown \} from "@\/lib\/resume-formatting\.js";/);
-  assert.match(source, /const fallbackStructured = modelStructured \? null : buildFallbackStructuredResume\(rawText\);/);
-  assert.match(source, /const markdown = modelStructured[\s\S]+renderStructuredResumeMarkdown\(structured\)[\s\S]+normalizeResumeMarkdown\(rawText\);/);
+  assert.match(source, /import \{ normalizeStructuredResumeV1, renderStructuredResumeV1Markdown \} from "@\/lib\/resume-schema\.js";/);
+  assert.match(source, /const fallbackStructured = buildFallbackStructuredResume\(rawText\);/);
+  assert.match(source, /const structured = normalizeStructuredResumeV1\(modelStructured \|\| fallbackStructured\);/);
+  assert.match(source, /const markdown = modelStructured[\s\S]+renderStructuredResumeV1Markdown\(structured\)[\s\S]+normalizeResumeMarkdown\(rawText\);/);
   assert.doesNotMatch(source, /const structured = modelStructured \|\| buildFallbackStructuredResume\(rawText\);\s*const markdown = renderStructuredResumeMarkdown\(structured\);/);
 });
