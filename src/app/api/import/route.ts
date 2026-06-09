@@ -5,6 +5,7 @@ import {
   normalizeStructuredResume,
   renderStructuredResumeMarkdown,
 } from "@/lib/resume-structured-extraction.js";
+import { normalizeResumeMarkdown } from "@/lib/resume-formatting.js";
 import { safeParseJsonObject } from "@/lib/ai-resume-contract.js";
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
@@ -200,8 +201,11 @@ export async function POST(req: NextRequest) {
 
     const rawText = text.replace(/\r\n/g,"\n").replace(/\n{4,}/g,"\n\n\n").trim();
     const modelStructured = await callDeepSeekForExtraction(rawText);
-    const structured = modelStructured || buildFallbackStructuredResume(rawText);
-    const markdown = renderStructuredResumeMarkdown(structured);
+    const fallbackStructured = modelStructured ? null : buildFallbackStructuredResume(rawText);
+    const structured = modelStructured || fallbackStructured;
+    const markdown = modelStructured
+      ? renderStructuredResumeMarkdown(structured)
+      : normalizeResumeMarkdown(rawText);
 
     return NextResponse.json({
       text: rawText,

@@ -28,3 +28,12 @@ test("PDF import uses an explicit in-process PDF.js worker port", () => {
   assert.ok(manifest.dependencies["pdfjs-dist"]);
   assert.equal(manifest.dependencies["pdf-parse"], undefined);
 });
+
+test("PDF import keeps full normalized markdown when model extraction falls back", () => {
+  const source = readFileSync(new URL("../src/app/api/import/route.ts", import.meta.url), "utf8");
+
+  assert.match(source, /import \{ normalizeResumeMarkdown \} from "@\/lib\/resume-formatting\.js";/);
+  assert.match(source, /const fallbackStructured = modelStructured \? null : buildFallbackStructuredResume\(rawText\);/);
+  assert.match(source, /const markdown = modelStructured[\s\S]+renderStructuredResumeMarkdown\(structured\)[\s\S]+normalizeResumeMarkdown\(rawText\);/);
+  assert.doesNotMatch(source, /const structured = modelStructured \|\| buildFallbackStructuredResume\(rawText\);\s*const markdown = renderStructuredResumeMarkdown\(structured\);/);
+});
