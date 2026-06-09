@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import mammoth from "mammoth";
 import { writeFileSync, readFileSync, unlinkSync } from "fs";
+import { createRequire } from "module";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
@@ -14,6 +15,8 @@ const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : "解析失败";
+const require = createRequire(import.meta.url);
+const PDF_PARSE_MODULE_PATH = require.resolve("pdf-parse");
 
 const EXTRACT_PROMPT = `你是简历信息抽取引擎。你必须输出严格 JSON，不要 Markdown，不要解释性前后缀。
 
@@ -67,11 +70,8 @@ async function callDeepSeekForExtraction(text: string) {
 const PDF_PARSE_SCRIPT = join(tmpdir(), "pdf_parse_worker.js");
 try {
   writeFileSync(PDF_PARSE_SCRIPT, `
-const { createRequire } = require('module');
-const path = require('path');
-const cwd = process.argv[4] || process.cwd();
-const requireFromProject = createRequire(path.join(cwd, 'package.json'));
-const pdf = requireFromProject('pdf-parse');
+const pdfModulePath = process.argv[4];
+const pdf = require(pdfModulePath);
 const fs = require('fs');
 const file = process.argv[2];
 const out = process.argv[3];
@@ -114,7 +114,7 @@ export async function POST(req: NextRequest) {
       writeFileSync(tmpFile, new Uint8Array(buffer));
       try {
         const c = await import("child_process");
-        c.execSync(`node ${JSON.stringify(PDF_PARSE_SCRIPT)} ${JSON.stringify(tmpFile)} ${JSON.stringify(outFile)} ${JSON.stringify(process.cwd())}`, { timeout: 60000, maxBuffer: 1024*1024 });
+        c.execSync(`node ${JSON.stringify(PDF_PARSE_SCRIPT)} ${JSON.stringify(tmpFile)} ${JSON.stringify(outFile)} ${JSON.stringify(PDF_PARSE_MODULE_PATH)}`, { timeout: 60000, maxBuffer: 1024*1024 });
         const out = JSON.parse(readFileSync(outFile, "utf-8"));
         if (out.error) throw new Error(out.error);
         text = out.text || "";
