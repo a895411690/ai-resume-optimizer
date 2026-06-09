@@ -46,6 +46,52 @@ function installPdfNodePolyfills() {
   }
 }
 
+type PdfLoopbackEvent = { data: unknown };
+type PdfLoopbackListener = (event: PdfLoopbackEvent) => void;
+type PdfLoopbackOptions = { signal?: AbortSignal } | null;
+type PdfWorkerMessageHandler = { initializeFromPort(port: PdfLoopbackPort): void };
+type PdfWorkerInstance = { destroy(): void };
+type PdfWorkerConstructor = new (params: { port: PdfLoopbackPort }) => PdfWorkerInstance;
+
+class PdfLoopbackPort {
+  #listeners = new Map<PdfLoopbackListener, (() => void) | null>();
+  #deferred = Promise.resolve();
+
+  postMessage(obj: unknown, transfer?: Transferable[]) {
+    const event = {
+      data: structuredClone(obj, transfer ? { transfer } : undefined),
+    };
+    this.#deferred.then(() => {
+      for (const listener of this.#listeners.keys()) {
+        listener.call(this, event);
+      }
+    });
+  }
+
+  addEventListener(_name: string, listener: PdfLoopbackListener, options: PdfLoopbackOptions = null) {
+    let removeAbortListener: (() => void) | null = null;
+    if (options?.signal) {
+      if (options.signal.aborted) return;
+      const onAbort = () => this.removeEventListener(_name, listener);
+      removeAbortListener = () => options.signal?.removeEventListener("abort", onAbort);
+      options.signal.addEventListener("abort", onAbort);
+    }
+    this.#listeners.set(listener, removeAbortListener);
+  }
+
+  removeEventListener(_name: string, listener: PdfLoopbackListener) {
+    this.#listeners.get(listener)?.();
+    this.#listeners.delete(listener);
+  }
+
+  terminate() {
+    for (const removeAbortListener of this.#listeners.values()) {
+      removeAbortListener?.();
+    }
+    this.#listeners.clear();
+  }
+}
+
 const EXTRACT_PROMPT = `你是简历信息抽取引擎。你必须输出严格 JSON，不要 Markdown，不要解释性前后缀。
 
 任务：基于用户上传文件中抽取出的纯文本，进行深度语义理解，将任意排版的非结构化简历文本转换为结构化简历数据。
@@ -98,10 +144,16 @@ async function callDeepSeekForExtraction(text: string) {
 async function extractPdfText(buffer: Buffer) {
   installPdfNodePolyfills();
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const { WorkerMessageHandler } = await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
-  (globalThis as typeof globalThis & { pdfjsWorker?: unknown }).pdfjsWorker = { WorkerMessageHandler };
+  const { WorkerMessageHandler } = await import("pdfjs-dist/legacy/build/pdf.worker.mjs") as {
+    WorkerMessageHandler: PdfWorkerMessageHandler;
+  };
+  const workerPort = new PdfLoopbackPort();
+  WorkerMessageHandler.initializeFromPort(workerPort);
+  const PdfWorker = pdfjs.PDFWorker as unknown as PdfWorkerConstructor;
+  const worker = new PdfWorker({ port: workerPort });
   const loadingTask = pdfjs.getDocument({
     data: new Uint8Array(buffer),
+    worker,
     useWorkerFetch: false,
     isEvalSupported: false,
   } as Record<string, unknown>);
@@ -120,6 +172,8 @@ async function extractPdfText(buffer: Buffer) {
     return pages.join("\n");
   } finally {
     await loadingTask.destroy();
+    worker.destroy();
+    workerPort.terminate();
   }
 }
 
