@@ -396,8 +396,8 @@ export default function Page() {
   }
 
   return (
-    <div className="flex h-screen bg-slate-100 text-slate-950">
-      <aside className="w-[320px] flex-shrink-0 border-r bg-white flex flex-col">
+    <div className="flex min-h-screen flex-col bg-slate-100 text-slate-950 md:h-screen md:flex-row md:overflow-hidden">
+      <aside className="flex w-full flex-col border-b bg-white md:h-full md:w-[320px] md:flex-shrink-0 md:border-b-0 md:border-r">
         <div className="p-4 border-b">
           <div className="flex items-center gap-2 mb-4">
             <Sparkles className="h-5 w-5 text-blue-600" />
@@ -416,7 +416,7 @@ export default function Page() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto p-4 space-y-5">
+        <div className="max-h-[52svh] flex-1 overflow-auto p-4 space-y-5 md:max-h-none">
           <section className="space-y-2">
             <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">模式</p>
             <div className="grid grid-cols-2 gap-2">
@@ -520,8 +520,8 @@ export default function Page() {
         </div>
       </aside>
 
-      <main className="flex-1 flex min-w-0 flex-col">
-        <header className="flex items-center gap-3 border-b bg-white px-6 py-3">
+      <main className="flex min-w-0 flex-1 flex-col md:h-full">
+        <header className="flex flex-wrap items-start gap-2 border-b bg-white px-3 py-3 sm:items-center sm:gap-3 sm:px-4 md:px-6">
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-sm font-semibold">{resume.title || "我的简历"}</h2>
             <p className="text-xs text-muted-foreground">
@@ -543,7 +543,7 @@ export default function Page() {
           </Button>
         </header>
 
-        <div className="flex-1 overflow-auto p-6">
+        <div className="flex-1 overflow-auto p-3 sm:p-4 md:p-6">
           {!currentMarkdown ? (
             <div className="flex h-full min-h-80 items-center justify-center">
               <div className="max-w-md text-center">
@@ -553,11 +553,11 @@ export default function Page() {
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-[minmax(0,1fr)_360px] gap-5">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:gap-5">
               <div className="min-w-0">
                 <ResumePreview markdown={currentMarkdown} title={resume.title} />
               </div>
-              <aside className="space-y-4">
+              <aside className="min-w-0 space-y-4">
                 {diagnosis && (
                   <section className="rounded-lg border bg-white p-4 shadow-sm">
                     <div className="mb-3 flex items-start justify-between">
@@ -656,10 +656,10 @@ export default function Page() {
         </div>
 
         {editorOpen && (
-          <div className="h-56 border-t bg-white flex flex-col">
-            <div className="flex items-center justify-between border-b px-4 py-2">
+          <div className="flex h-[38svh] min-h-48 flex-col border-t bg-white md:h-56">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2 sm:px-4">
               <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Markdown 编辑器</span>
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 items-center gap-2">
                 <span className="text-[11px] text-muted-foreground">{version === "original" ? "编辑原始简历" : "编辑优化版本"}</span>
                 <Button className="h-6 px-2 text-[10px]" variant="ghost" size="sm" disabled={!currentMarkdown.trim()} onClick={formatCurrentMarkdown}>
                   <Wand2 className="mr-1 h-3 w-3" />
@@ -668,7 +668,7 @@ export default function Page() {
               </div>
             </div>
             <Textarea
-              className="flex-1 resize-none rounded-none border-0 p-4 font-mono text-xs leading-relaxed focus-visible:ring-0"
+              className="flex-1 resize-none rounded-none border-0 p-3 font-mono text-xs leading-relaxed focus-visible:ring-0 sm:p-4"
               placeholder="# 我的简历&#10;&#10;## 个人信息&#10;- **姓名**：张三&#10;- **电话**：13800138000&#10;&#10;## 项目经历&#10;- 描述你的真实经历、行动和结果"
               value={currentMarkdown}
               onChange={(event) => updateCurrentMarkdown(event.target.value)}
@@ -678,12 +678,12 @@ export default function Page() {
       </main>
 
       <Dialog open={compareOpen} onOpenChange={setCompareOpen}>
-        <DialogContent className="max-w-6xl max-h-[92vh] overflow-auto">
+        <DialogContent className="max-h-[92svh] w-[calc(100vw-1rem)] max-w-6xl overflow-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle>版本对比</DialogTitle>
             <DialogDescription>左侧为原始简历，右侧为优化版本。</DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 md:grid-cols-2">
             <div>
               <h4 className="mb-2 text-xs font-semibold text-muted-foreground">原始版</h4>
               <div className="max-h-[70vh] overflow-auto rounded-md border bg-white p-4 text-xs"><ReactMarkdown>{normalizeResumeMarkdown(resume.original_content)}</ReactMarkdown></div>
@@ -700,7 +700,7 @@ export default function Page() {
       </Dialog>
 
       <Dialog open={Boolean(diagnosisMarkdown) && workflowMode === "fast"} onOpenChange={() => setDiagnosisMarkdown("")}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-auto">
+        <DialogContent className="max-h-[85svh] w-[calc(100vw-1rem)] max-w-2xl overflow-auto p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle>快速诊断报告</DialogTitle>
             <DialogDescription>本次快速模式生成的结构化诊断摘要。</DialogDescription>
