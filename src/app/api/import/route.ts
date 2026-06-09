@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import mammoth from "mammoth";
-import { writeFileSync, readFileSync, unlinkSync } from "fs";
-import { createRequire } from "module";
-import { tmpdir } from "os";
-import { join } from "path";
+import { PDFParse } from "pdf-parse";
 import {
   buildFallbackStructuredResume,
   normalizeStructuredResume,
@@ -15,8 +12,6 @@ const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : "解析失败";
-const require = createRequire(import.meta.url);
-const PDF_PARSE_MODULE_PATH = require.resolve("pdf-parse");
 
 const EXTRACT_PROMPT = `你是简历信息抽取引擎。你必须输出严格 JSON，不要 Markdown，不要解释性前后缀。
 
@@ -67,36 +62,15 @@ async function callDeepSeekForExtraction(text: string) {
   return parsed ? normalizeStructuredResume({ ...parsed, meta: { ...(parsed.meta || {}), source: "deepseek" } }) : null;
 }
 
-const PDF_PARSE_SCRIPT = join(tmpdir(), "pdf_parse_worker.js");
-try {
-  writeFileSync(PDF_PARSE_SCRIPT, `
-const pdfModulePath = process.argv[4];
-const pdf = require(pdfModulePath);
-const fs = require('fs');
-const file = process.argv[2];
-const out = process.argv[3];
-try {
-  const buffer = fs.readFileSync(file);
-  const parse = async () => {
-    if (typeof pdf === 'function') return pdf(buffer);
-    if (typeof pdf.default === 'function') return pdf.default(buffer);
-    if (typeof pdf.PDFParse === 'function') {
-      const parser = new pdf.PDFParse({ data: buffer });
-      try { return await parser.getText(); }
-      finally { await parser.destroy(); }
-    }
-    throw new Error('Unsupported pdf-parse export');
-  };
-  parse().then(d => {
-    fs.writeFileSync(out, JSON.stringify({text: d.text || ''}));
-  }).catch(e => {
-    fs.writeFileSync(out, JSON.stringify({error: e.message}));
-  });
-} catch(e) {
-  fs.writeFileSync(out, JSON.stringify({error: e.message}));
+async function extractPdfText(buffer: Buffer) {
+  const parser = new PDFParse({ data: buffer });
+  try {
+    const result = await parser.getText();
+    return result.text || "";
+  } finally {
+    await parser.destroy();
+  }
 }
-`);
-} catch {}
 
 export async function POST(req: NextRequest) {
   try {
@@ -109,18 +83,7 @@ export async function POST(req: NextRequest) {
     let text = "";
 
     if (fileName.endsWith(".pdf")) {
-      const tmpFile = join(tmpdir(), `imp_${Date.now()}.pdf`);
-      const outFile = join(tmpdir(), `imp_${Date.now()}.json`);
-      writeFileSync(tmpFile, new Uint8Array(buffer));
-      try {
-        const c = await import("child_process");
-        c.execSync(`node ${JSON.stringify(PDF_PARSE_SCRIPT)} ${JSON.stringify(tmpFile)} ${JSON.stringify(outFile)} ${JSON.stringify(PDF_PARSE_MODULE_PATH)}`, { timeout: 60000, maxBuffer: 1024*1024 });
-        const out = JSON.parse(readFileSync(outFile, "utf-8"));
-        if (out.error) throw new Error(out.error);
-        text = out.text || "";
-      } finally {
-        try { unlinkSync(tmpFile); unlinkSync(outFile); } catch {}
-      }
+      text = await extractPdfText(buffer);
     } else if (fileName.endsWith(".docx")) {
       const result = await mammoth.extractRawText({ buffer });
       text = result.value;
