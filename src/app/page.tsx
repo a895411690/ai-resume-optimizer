@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import {
   AlertTriangle,
@@ -32,7 +32,16 @@ import { StructuredResumeEditor } from "@/components/structured-resume-editor";
 import { ResumeTemplateCenter } from "@/components/resume-template-center";
 import { ResumeTemplateSelector } from "@/components/resume-template-selector";
 import { normalizeResumeMarkdown } from "@/lib/resume-formatting.js";
-import { DEFAULT_TEMPLATE_ID, normalizeResumeTemplateId } from "@/lib/resume-templates.js";
+import {
+  deleteUserResume,
+  fetchUserResume,
+  getResumeStateAfterCloudDelete,
+  listUserResumes,
+  saveResumeWithPersistence,
+  saveUserResume,
+  serializeResumeForDatabase,
+} from "@/lib/resume-persistence.js";
+import { DEFAULT_TEMPLATE_ID, getResumeTemplate, normalizeResumeTemplateId } from "@/lib/resume-templates.js";
 import { renderTemplateExportHtml } from "@/lib/resume-template-rendering.js";
 import {
   EMPTY_STRUCTURED_RESUME,
@@ -40,16 +49,16 @@ import {
   normalizeStructuredResumeV1,
   renderStructuredResumeV1Markdown,
 } from "@/lib/resume-schema.js";
+import { supabase } from "@/lib/supabase";
 
 const STORAGE_KEY = "resume_demo";
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 type Version = "original" | "optimized";
 type EditorMode = "structured" | "markdown";
 type WorkflowMode = "fast" | "professional";
 type UserType = "auto" | "fresh_graduate" | "junior" | "career_switcher" | "senior";
 type Strength = "conservative" | "professional" | "strong";
+type CloudSaveStatus = "idle" | "saving" | "saved" | "failed";
 
 type ResumeState = {
   title: string;
@@ -62,6 +71,14 @@ type ResumeState = {
 };
 
 type User = { id: string; email: string };
+type ResumeListItem = {
+  id: string;
+  title: string | null;
+  position: string | null;
+  template_id: string | null;
+  updated_at: string | null;
+  created_at: string | null;
+};
 
 type DimensionScore = { name: string; score: number; reason: string };
 type TopIssue = {
@@ -186,6 +203,12 @@ export default function Page() {
   const [error, setError] = useState("");
   const [compareOpen, setCompareOpen] = useState(false);
   const [templateCenterOpen, setTemplateCenterOpen] = useState(false);
+  const [resumeListOpen, setResumeListOpen] = useState(false);
+  const [resumeList, setResumeList] = useState<ResumeListItem[]>([]);
+  const [resumeListLoading, setResumeListLoading] = useState(false);
+  const [resumeListError, setResumeListError] = useState("");
+  const [currentResumeId, setCurrentResumeId] = useState<string | null>(null);
+  const [cloudSaveStatus, setCloudSaveStatus] = useState<CloudSaveStatus>("idle");
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -199,7 +222,23 @@ export default function Page() {
     ? (resume.optimizedStructuredResume || (resume.optimized_content ? migrateMarkdownToStructuredResumeV1(resume.optimized_content) : resume.structuredResume))
     : resume.structuredResume;
 
+  useEffect(() => {
+    let mounted = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted || !data.session?.user) return;
+      setUser({
+        id: data.session.user.id,
+        email: data.session.user.email || "",
+      });
+      setDemo(false);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   function updateResume(next: ResumeState | ((current: ResumeState) => ResumeState)) {
+    setCloudSaveStatus("idle");
     setResume((current) => {
       const resolved = typeof next === "function" ? next(current) : next;
       saveResume(resolved);
@@ -262,29 +301,25 @@ export default function Page() {
 
   async function signIn() {
     setAuthError("");
-    if (!SUPABASE_URL || !SUPABASE_KEY) {
-      setAuthError("Supabase 环境变量未配置，请检查 .env.local");
-      return;
-    }
-
     setAuthLoading(true);
     try {
-      const endpoint = authMode === "register"
-        ? `${SUPABASE_URL}/auth/v1/signup`
-        : `${SUPABASE_URL}/auth/v1/token?grant_type=password`;
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", apikey: SUPABASE_KEY },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error_description || data.msg || "认证失败");
       if (authMode === "register") {
-        setAuthError("注册成功，请切换到登录模式登录");
-        setAuthMode("login");
-      } else {
-        setUser({ id: data.user.id, email: data.user.email });
+        const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
+        if (signUpError) throw signUpError;
+        if (data.session?.user) {
+          setUser({ id: data.session.user.id, email: data.session.user.email || email });
+        } else {
+          setAuthError("注册成功，请切换到登录模式登录");
+          setAuthMode("login");
+        }
+        return;
       }
+
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError) throw signInError;
+      if (!data.user) throw new Error("认证失败");
+      setUser({ id: data.user.id, email: data.user.email || email });
+      setDemo(false);
     } catch (exception) {
       setAuthError(getErrorMessage(exception));
     } finally {
@@ -295,7 +330,19 @@ export default function Page() {
   function enterDemo() {
     setDemo(true);
     setUser({ id: "demo", email: "demo" });
+    setCurrentResumeId(null);
+    setCloudSaveStatus("idle");
     setResume(loadResume());
+  }
+
+  async function handleLogout() {
+    if (!demo) await supabase.auth.signOut();
+    setDemo(false);
+    setUser(null);
+    setCurrentResumeId(null);
+    setCloudSaveStatus("idle");
+    setResumeListOpen(false);
+    setResumeList([]);
   }
 
   async function requestDiagnosis() {
@@ -382,8 +429,138 @@ export default function Page() {
     setTimeout(() => windowRef.print(), 300);
   }
 
+  async function handleSaveResume() {
+    if (!user) return;
+    setCloudSaveStatus("saving");
+    setError("");
+
+    try {
+      const result = await saveResumeWithPersistence({
+        isDemo: demo,
+        resume,
+        saveLocal: saveResume,
+        saveCloud: async () => {
+          const payload = serializeResumeForDatabase({
+            resume,
+            user,
+            currentResumeId,
+            userType,
+            workflowMode,
+            strength,
+            diagnosis,
+            optimization,
+            jdText: jdEnabled ? jdText : "",
+          });
+          return saveUserResume(supabase, payload);
+        },
+      });
+      saveResume(resume);
+      if (result.mode === "cloud" && result.saved?.id) {
+        setCurrentResumeId(result.saved.id);
+      }
+      setCloudSaveStatus("saved");
+    } catch (exception) {
+      setCloudSaveStatus("failed");
+      setError(`保存失败：${getErrorMessage(exception)}`);
+    }
+  }
+
+  async function openResumeList() {
+    setResumeListOpen(true);
+    setResumeListError("");
+    if (demo) {
+      setResumeList([]);
+      return;
+    }
+
+    setResumeListLoading(true);
+    try {
+      const rows = await listUserResumes(supabase);
+      setResumeList(rows);
+    } catch (exception) {
+      setResumeListError(getErrorMessage(exception));
+    } finally {
+      setResumeListLoading(false);
+    }
+  }
+
+  async function loadCloudResume(id: string) {
+    setResumeListError("");
+    try {
+      const loaded = await fetchUserResume(supabase, id);
+      setResume(loaded.resume);
+      saveResume(loaded.resume);
+      setCurrentResumeId(id);
+      setUserType(loaded.userType as UserType);
+      setWorkflowMode(loaded.workflowMode as WorkflowMode);
+      setStrength(loaded.strength as Strength);
+      setDiagnosis(loaded.diagnosis);
+      setOptimization(loaded.optimization);
+      setJdText(loaded.jdText || "");
+      setJdEnabled(Boolean(loaded.jdText));
+      setVersion("original");
+      setCloudSaveStatus("saved");
+      setResumeListOpen(false);
+    } catch (exception) {
+      setResumeListError(getErrorMessage(exception));
+    }
+  }
+
+  async function removeCloudResume(id: string) {
+    setResumeListError("");
+    try {
+      await deleteUserResume(supabase, id);
+      setResumeList((current) => current.filter((item) => item.id !== id));
+      const next = getResumeStateAfterCloudDelete({
+        deletedResumeId: id,
+        currentResumeId,
+        emptyResume: EMPTY_RESUME,
+        currentResume: resume,
+      });
+      setCurrentResumeId(next.currentResumeId);
+      if (next.resume !== resume) {
+        setResume(next.resume);
+        saveResume(next.resume);
+        setDiagnosis(null);
+        setOptimization(null);
+        setDiagnosisMarkdown("");
+        setVersion("original");
+      }
+      setCloudSaveStatus("idle");
+    } catch (exception) {
+      setResumeListError(getErrorMessage(exception));
+    }
+  }
+
+  function cloudSaveLabel() {
+    if (cloudSaveStatus === "saving") return "保存中";
+    if (cloudSaveStatus === "saved") return "已保存";
+    if (cloudSaveStatus === "failed") return "保存失败";
+    return "保存";
+  }
+
+  function formatCloudTime(value: string | null) {
+    if (!value) return "未知时间";
+    try {
+      return new Intl.DateTimeFormat("zh-CN", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date(value));
+    } catch {
+      return value;
+    }
+  }
+
+  function getTemplateName(templateId: string | null) {
+    return getResumeTemplate(normalizeResumeTemplateId(templateId || DEFAULT_TEMPLATE_ID)).name;
+  }
+
   function resetResume() {
     updateResume(EMPTY_RESUME);
+    setCurrentResumeId(null);
+    setCloudSaveStatus("idle");
     setVersion("original");
     setDiagnosis(null);
     setOptimization(null);
@@ -550,7 +727,7 @@ export default function Page() {
             <Button variant="ghost" size="sm" disabled={!hasOptimized} onClick={() => setCompareOpen(true)}><GitCompare className="mr-1 h-3 w-3" />对比</Button>
             <Button variant="ghost" size="sm" disabled={!currentMarkdown} onClick={downloadPdf}><Download className="mr-1 h-3 w-3" />PDF</Button>
             <Button variant="ghost" size="sm" onClick={resetResume}><Trash2 className="mr-1 h-3 w-3" />清空</Button>
-            <Button variant="ghost" size="sm" onClick={() => { setDemo(false); setUser(null); }}><LogOut className="mr-1 h-3 w-3" />退出</Button>
+            <Button variant="ghost" size="sm" onClick={handleLogout}><LogOut className="mr-1 h-3 w-3" />退出</Button>
           </div>
         </div>
       </aside>
@@ -573,13 +750,17 @@ export default function Page() {
             <LayoutTemplate className="mr-1 h-3 w-3" />
             <span>模板中心</span>
           </Button>
+          <Button variant="outline" size="sm" onClick={openResumeList}>
+            <FileText className="mr-1 h-3 w-3" />
+            <span>我的简历</span>
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setEditorOpen(!editorOpen)}>
             {editorOpen ? <Eye className="mr-1 h-3 w-3" /> : <Edit3 className="mr-1 h-3 w-3" />}
             {editorOpen ? "预览" : "编辑"}
           </Button>
-          <Button size="sm" onClick={() => saveResume(resume)}>
-            <FileText className="mr-1 h-3 w-3" />
-            保存
+          <Button size="sm" onClick={handleSaveResume} disabled={cloudSaveStatus === "saving"}>
+            {cloudSaveStatus === "saving" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <FileText className="mr-1 h-3 w-3" />}
+            {cloudSaveLabel()}
           </Button>
         </header>
 
@@ -775,6 +956,72 @@ export default function Page() {
           setTemplateCenterOpen(false);
         }}
       />
+
+      <Dialog open={resumeListOpen} onOpenChange={setResumeListOpen}>
+        <DialogContent className="max-h-[92svh] w-[calc(100vw-1rem)] max-w-3xl overflow-auto p-4 sm:p-6">
+          <DialogHeader>
+            <DialogTitle>我的简历</DialogTitle>
+            <DialogDescription>
+              {demo ? "Demo 模式仅保存在本机浏览器；登录后可保存到云端。" : "打开、删除或继续编辑你保存过的云端简历。"}
+            </DialogDescription>
+          </DialogHeader>
+
+          {demo ? (
+            <div className="rounded-md border bg-amber-50 p-4 text-sm text-amber-800">
+              当前是 Demo 模式，保存按钮会继续写入本机 localStorage，不会调用 Supabase。
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {resumeListLoading && (
+                <div className="flex items-center gap-2 rounded-md border bg-white p-4 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  正在加载云端简历
+                </div>
+              )}
+
+              {resumeListError && (
+                <div className="rounded-md border border-red-100 bg-red-50 p-3 text-sm text-red-700">
+                  {resumeListError}
+                </div>
+              )}
+
+              {!resumeListLoading && !resumeList.length && !resumeListError && (
+                <div className="rounded-md border bg-slate-50 p-4 text-sm text-muted-foreground">
+                  暂无云端简历，点击工作台右上角保存后会出现在这里。
+                </div>
+              )}
+
+              {resumeList.map((item) => (
+                <div key={item.id} className="rounded-md border bg-white p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">{item.title || "我的简历"}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {item.position || "未填写目标岗位"} · 模板：{getTemplateName(item.template_id)}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        更新时间：{formatCloudTime(item.updated_at || item.created_at)}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 sm:flex-nowrap">
+                      <Button size="sm" variant="outline" onClick={() => loadCloudResume(item.id)}>
+                        打开
+                      </Button>
+                      <Button size="sm" variant="destructive" onClick={() => removeCloudResume(item.id)}>
+                        删除
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button size="sm" variant="outline" onClick={() => setResumeListOpen(false)}>关闭</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(diagnosisMarkdown) && workflowMode === "fast"} onOpenChange={() => setDiagnosisMarkdown("")}>
         <DialogContent className="max-h-[85svh] w-[calc(100vw-1rem)] max-w-2xl overflow-auto p-4 sm:p-6">

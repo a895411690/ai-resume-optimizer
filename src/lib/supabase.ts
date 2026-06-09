@@ -17,8 +17,8 @@ function getSupabase(): SupabaseClient {
 
 export const supabase = {
   get auth() { return getSupabase().auth; },
-  get from() { return getSupabase().from; },
-  get rpc() { return getSupabase().rpc; },
+  from(table: string) { return getSupabase().from(table); },
+  rpc(functionName: string, args?: Record<string, unknown>) { return getSupabase().rpc(functionName, args); },
   get storage() { return getSupabase().storage; },
   get functions() { return getSupabase().functions; },
 };

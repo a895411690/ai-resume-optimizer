@@ -9,6 +9,14 @@ CREATE TABLE IF NOT EXISTS resumes (
   original_content TEXT DEFAULT '',
   optimized_content TEXT DEFAULT '',
   target_jd TEXT DEFAULT '',
+  structured_resume JSONB,
+  optimized_structured_resume JSONB,
+  template_id TEXT DEFAULT 'classic',
+  user_type TEXT DEFAULT 'auto',
+  workflow_mode TEXT DEFAULT 'fast',
+  strength TEXT DEFAULT 'professional',
+  diagnosis JSONB,
+  optimization JSONB,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -16,6 +24,7 @@ CREATE TABLE IF NOT EXISTS resumes (
 -- 索引
 CREATE INDEX IF NOT EXISTS idx_resumes_user_id ON resumes(user_id);
 CREATE INDEX IF NOT EXISTS idx_resumes_updated_at ON resumes(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_resumes_template_id ON resumes(template_id);
 
 -- 自动更新 updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()
