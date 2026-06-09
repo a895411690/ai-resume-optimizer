@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import mammoth from "mammoth";
-import { PDFParse } from "pdf-parse";
 import {
   buildFallbackStructuredResume,
   normalizeStructuredResume,
@@ -12,6 +11,40 @@ const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : "解析失败";
+
+function installPdfNodePolyfills() {
+  const globalScope = globalThis as Record<string, unknown>;
+  const pdfGlobalScope = globalScope as Record<string, unknown>;
+
+  if (!globalScope.DOMMatrix) {
+    pdfGlobalScope.DOMMatrix = class DOMMatrix {
+      a = 1;
+      b = 0;
+      c = 0;
+      d = 1;
+      e = 0;
+      f = 0;
+
+      constructor(init?: number[]) {
+        if (Array.isArray(init) && init.length >= 6) {
+          [this.a, this.b, this.c, this.d, this.e, this.f] = init;
+        }
+      }
+    };
+  }
+  if (!globalScope.ImageData) {
+    pdfGlobalScope.ImageData = class ImageData {
+      constructor(
+        public data: Uint8ClampedArray,
+        public width: number,
+        public height: number,
+      ) {}
+    };
+  }
+  if (!globalScope.Path2D) {
+    pdfGlobalScope.Path2D = class Path2D {};
+  }
+}
 
 const EXTRACT_PROMPT = `你是简历信息抽取引擎。你必须输出严格 JSON，不要 Markdown，不要解释性前后缀。
 
@@ -63,6 +96,8 @@ async function callDeepSeekForExtraction(text: string) {
 }
 
 async function extractPdfText(buffer: Buffer) {
+  installPdfNodePolyfills();
+  const { PDFParse } = await import("pdf-parse");
   const parser = new PDFParse({ data: buffer });
   try {
     const result = await parser.getText();
