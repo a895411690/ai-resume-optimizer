@@ -21,7 +21,10 @@ import {
   Trash2,
   Upload,
   Wand2,
+  Mail,
+  Lock,
 } from "lucide-react";
+import { LoginParticles } from "@/components/login-particles";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -739,38 +742,56 @@ export default function Page() {
 
   if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
-        <div className="w-full max-w-sm rounded-lg border bg-white p-8 shadow-sm">
+      <div className="login-page">
+        <LoginParticles />
+        <div className="login-card">
           <div className="text-center mb-6">
-            <div className="inline-flex h-12 w-12 items-center justify-center rounded-lg bg-blue-50 mb-3">
-              <Sparkles className="h-6 w-6 text-blue-600" />
+            <div className="login-icon-wrap mb-3">
+              <Sparkles className="h-6 w-6" style={{ color: "#7B61FF" }} />
             </div>
-            <h1 className="text-xl font-bold">AI 简历优化工具</h1>
-            <p className="text-sm text-muted-foreground mt-1">可信诊断，可解释优化</p>
+            <h1 className="login-title">AI 简历优化工具</h1>
+            <p className="login-subtitle">可信诊断，可解释优化</p>
           </div>
           <form className="space-y-3" onSubmit={(event) => {
             event.preventDefault();
             signIn();
           }}>
-            <Input placeholder="邮箱地址" value={email} onChange={(event) => setEmail(event.target.value)} />
-            <Input placeholder="密码" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
-            {authError && <p className={`text-xs ${authError.includes("成功") ? "text-green-600" : "text-destructive"}`}>{authError}</p>}
-            <Button className="w-full" type="submit" disabled={authLoading}>
-              {authLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <div className="login-input-wrapper">
+              <Mail className="login-input-icon" />
+              <input
+                className="login-input"
+                placeholder="邮箱地址"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+              />
+            </div>
+            <div className="login-input-wrapper">
+              <Lock className="login-input-icon" />
+              <input
+                className="login-input"
+                placeholder="密码"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+            </div>
+            {authError && <p className={`login-error ${authError.includes("成功") ? "text-green-400" : "text-red-400"}`}>{authError}</p>}
+            <button className="login-btn-primary" type="submit" disabled={authLoading}>
+              {authLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" style={{ display: "inline-block", verticalAlign: "middle" }} />}
               {authMode === "login" ? "登录" : "注册"}
-            </Button>
-            <p className="text-xs text-center text-muted-foreground">
+            </button>
+            <p className="text-xs text-center" style={{ color: "#909399" }}>
               {authMode === "login" ? "没有账号？" : "已有账号？"}
-              <button type="button" className="text-primary hover:underline" onClick={() => setAuthMode(authMode === "login" ? "register" : "login")}>
+              <button type="button" className="login-link" onClick={() => setAuthMode(authMode === "login" ? "register" : "login")}>
                 {authMode === "login" ? "注册" : "登录"}
               </button>
             </p>
           </form>
-          <Separator className="my-4" />
-          <Button className="w-full" type="button" variant="outline" onClick={enterDemo}>
-            <Monitor className="mr-2 h-4 w-4" />
+          <hr className="login-divider" />
+          <button className="login-btn-demo" type="button" onClick={enterDemo}>
+            <Monitor className="mr-2 h-4 w-4" style={{ display: "inline-block", verticalAlign: "middle" }} />
             体验 Demo（无需登录）
-          </Button>
+          </button>
         </div>
       </div>
     );
