@@ -47,6 +47,7 @@ import {
 } from "@/lib/resume-persistence.js";
 import { DEFAULT_TEMPLATE_ID, getResumeTemplate, normalizeResumeTemplateId, RESUME_TEMPLATES } from "@/lib/resume-templates.js";
 import { renderTemplateExportHtml } from "@/lib/resume-template-rendering.js";
+import { buildResumeWordDocument, getResumeWordFileName } from "@/lib/resume-word-export.js";
 import {
   EMPTY_STRUCTURED_RESUME,
   migrateMarkdownToStructuredResumeV1,
@@ -518,48 +519,17 @@ export default function Page() {
   }
 
   async function downloadWord() {
-    const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = await import("docx");
-    const resume = normalizeStructuredResumeV1(currentStructuredResume);
-    const children: InstanceType<typeof Paragraph>[] = [];
-    if (resume.basics.name) children.push(new Paragraph({ text: resume.basics.name, heading: HeadingLevel.TITLE, alignment: AlignmentType.CENTER }));
-    const contactParts = [resume.basics.phone, resume.basics.email, resume.basics.location].filter(Boolean);
-    if (contactParts.length) children.push(new Paragraph({ children: [new TextRun({ text: contactParts.join(" | "), size: 20 })], alignment: AlignmentType.CENTER }));
-    if (resume.basics.job_target) children.push(new Paragraph({ children: [new TextRun({ text: `求职意向：${resume.basics.job_target}`, size: 20 })], alignment: AlignmentType.CENTER }));
-    children.push(new Paragraph({ text: "" }));
-    const addSection = (title: string) => children.push(new Paragraph({ text: title, heading: HeadingLevel.HEADING_2 }));
-    const addBullet = (text: string) => children.push(new Paragraph({ text: `• ${text}`, spacing: { after: 60 } }));
-    addSection("教育经历");
-    for (const education of resume.education) {
-      const parts = [education.school, education.major, education.degree, education.time_range].filter(Boolean);
-      if (parts.length) children.push(new Paragraph({ children: [new TextRun({ text: parts.join(" - "), bold: true, size: 22 })] }));
-      if (education.gpa) addBullet(`GPA: ${education.gpa}`);
-      if (education.courses?.length) addBullet(`主修课程: ${education.courses.join("、")}`);
-    }
-    addSection("工作/实习经历");
-    for (const work of resume.work) {
-      const parts = [work.company, work.position, work.time_range].filter(Boolean);
-      if (parts.length) children.push(new Paragraph({ children: [new TextRun({ text: parts.join(" - "), bold: true, size: 22 })] }));
-      if (work.job_content) addBullet(work.job_content);
-      if (work.job_result?.length) for (const r of work.job_result) if (r) addBullet(r);
-    }
-    addSection("项目经历");
-    for (const project of resume.projects) {
-      const parts = [project.project_name, project.role].filter(Boolean);
-      if (parts.length) children.push(new Paragraph({ children: [new TextRun({ text: parts.join(" - "), bold: true, size: 22 })] }));
-      if (project.project_intro) addBullet(project.project_intro);
-      if (project.duty) addBullet(project.duty);
-      if (project.achievement?.length) for (const a of project.achievement) if (a) addBullet(a);
-    }
-    addSection("专业技能");
-    if (resume.skills.skill_hard?.length) addBullet(`硬技能: ${resume.skills.skill_hard.join("、")}`);
-    if (resume.skills.skill_soft?.length) addBullet(`软技能: ${resume.skills.skill_soft.join("、")}`);
-    if (resume.skills.certificate_list?.length) addBullet(`证书: ${resume.skills.certificate_list.join("、")}`);
-    const doc = new Document({ sections: [{ children }] });
-    const blob = await Packer.toBlob(doc);
+    const docx = await import("docx");
+    const doc = buildResumeWordDocument({
+      docx,
+      structuredResume: currentStructuredResume,
+      templateId: resume.templateId,
+    });
+    const blob = await docx.Packer.toBlob(doc);
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${resume.basics.name || "简历"}.docx`;
+    a.download = getResumeWordFileName(currentStructuredResume);
     a.click();
     URL.revokeObjectURL(url);
   }
