@@ -7,8 +7,15 @@ import {
   normalizeResumeTemplateId,
 } from "../src/lib/resume-templates.js";
 
-test("catalog ships three mainstream templates with stable ids", () => {
-  assert.deepEqual(RESUME_TEMPLATES.map((item) => item.id), ["classic", "modern", "executive"]);
+test("catalog ships mainstream templates with stable ids covering all PRD categories", () => {
+  const ids = RESUME_TEMPLATES.map((item) => item.id);
+  assert.ok(ids.length >= 15, `expected at least 15 templates, got ${ids.length}`);
+  assert.equal(ids[0], "classic");
+  assert.ok(ids.includes("modern"));
+  assert.ok(ids.includes("executive"));
+  assert.ok(ids.includes("campus_fresh"));
+  assert.ok(ids.includes("gov_formal"));
+  assert.ok(ids.includes("bilingual_modern"));
   assert.equal(DEFAULT_TEMPLATE_ID, "classic");
 });
 
