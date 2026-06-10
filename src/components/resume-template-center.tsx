@@ -28,27 +28,54 @@ function includesQuery(values: string[], query: string) {
 
 function renderTemplatePreview(template: (typeof RESUME_TEMPLATES)[number]) {
   const accent = template.preview.accent;
-  const sideColumn = template.preview.layout === "two-column";
+  const isTwoColumn = template.preview.layout === "two-column";
+  const isAccent = template.preview.layout === "single-accent";
   return (
-    <div className="w-28 rounded bg-white p-3 shadow-sm">
-      <div className="h-2 w-16 rounded bg-slate-800" />
-      <div className="mt-1.5 h-1.5 w-20 rounded bg-slate-200" />
-      <div className="mt-1 h-1.5 w-14 rounded bg-slate-200" />
-      <div className={`mt-3 grid gap-1 ${sideColumn ? "grid-cols-[34px_1fr]" : "grid-cols-1"}`}>
-        {sideColumn && (
-          <div className="space-y-1">
-            <div className="h-8 rounded" style={{ backgroundColor: accent }} />
-            <div className="h-1.5 rounded bg-slate-200" />
-            <div className="h-1.5 rounded bg-slate-200" />
+    <div className="w-full rounded bg-white p-3 shadow-sm" style={{ minHeight: 100 }}>
+      {isAccent ? (
+        <>
+          <div className="flex items-center gap-2">
+            <div className="h-5 w-1 rounded" style={{ backgroundColor: accent }} />
+            <div className="h-2 w-14 rounded bg-slate-800" />
           </div>
-        )}
-        <div className="space-y-1">
-          <div className="h-1.5 rounded" style={{ backgroundColor: accent }} />
-          <div className="h-1.5 w-4/5 rounded bg-slate-200" />
-          <div className="h-1.5 rounded bg-slate-200" />
-          <div className="h-1.5 w-2/3 rounded bg-slate-200" />
+          <div className="mt-1.5 ml-3 h-1.5 w-20 rounded bg-slate-200" />
+          <div className="mt-2 h-1.5 rounded" style={{ backgroundColor: accent, opacity: 0.15 }} />
+          <div className="mt-1.5 space-y-1">
+            <div className="h-1.5 w-full rounded bg-slate-200" />
+            <div className="h-1.5 w-4/5 rounded bg-slate-200" />
+            <div className="h-1.5 w-full rounded bg-slate-200" />
+            <div className="h-1.5 w-2/3 rounded bg-slate-200" />
+          </div>
+        </>
+      ) : isTwoColumn ? (
+        <div className="grid grid-cols-[38px_1fr] gap-1.5">
+          <div className="space-y-1">
+            <div className="h-7 rounded" style={{ backgroundColor: accent }} />
+            <div className="h-1.5 rounded bg-slate-300" />
+            <div className="h-1.5 rounded bg-slate-300" />
+            <div className="h-1.5 rounded bg-slate-300" />
+          </div>
+          <div className="space-y-1">
+            <div className="h-2 w-12 rounded bg-slate-800" />
+            <div className="h-1.5 rounded bg-slate-200" />
+            <div className="h-1.5 w-4/5 rounded bg-slate-200" />
+            <div className="h-1.5 rounded bg-slate-200" />
+            <div className="h-1.5 w-2/3 rounded bg-slate-200" />
+          </div>
         </div>
-      </div>
+      ) : (
+        <>
+          <div className="mx-auto h-2 w-14 rounded bg-slate-800" />
+          <div className="mx-auto mt-1 h-1.5 w-20 rounded bg-slate-200" />
+          <div className="mt-2 h-1.5 rounded" style={{ backgroundColor: accent, opacity: 0.2 }} />
+          <div className="mt-1.5 space-y-1">
+            <div className="h-1.5 w-full rounded bg-slate-200" />
+            <div className="h-1.5 w-4/5 rounded bg-slate-200" />
+            <div className="h-1.5 w-full rounded bg-slate-200" />
+            <div className="h-1.5 w-2/3 rounded bg-slate-200" />
+          </div>
+        </>
+      )}
     </div>
   );
 }
