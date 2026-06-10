@@ -89,7 +89,21 @@ function recommendResumeTemplates({ userType = "auto", targetRole = "", structur
     .map(({ templateId, reason }) => ({ templateId, reason }));
 }
 
+function normalizeTemplateRecommendations(value, templates = RESUME_TEMPLATES) {
+  const catalogIds = new Set(templates.map((template) => template.id));
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  return value
+    .map((item) => ({
+      templateId: stringValue(item && item.templateId),
+      reason: stringValue(item && item.reason),
+    }))
+    .filter((item) => catalogIds.has(item.templateId) && item.reason && !seen.has(item.templateId) && seen.add(item.templateId))
+    .slice(0, 5);
+}
+
 module.exports = {
   getTemplateRecommendationContext,
+  normalizeTemplateRecommendations,
   recommendResumeTemplates,
 };

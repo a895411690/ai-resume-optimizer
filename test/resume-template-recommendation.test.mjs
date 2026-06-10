@@ -3,6 +3,7 @@ import test from "node:test";
 import { RESUME_TEMPLATES } from "../src/lib/resume-templates.js";
 import {
   getTemplateRecommendationContext,
+  normalizeTemplateRecommendations,
   recommendResumeTemplates,
 } from "../src/lib/resume-template-recommendation.js";
 
@@ -49,4 +50,19 @@ test("recommendation context reads target role from structured resume when expli
   assert.equal(context.userType, "auto");
   assert.equal(context.targetRole, "数据产品经理");
   assert.equal(context.keywordText.includes("数据产品经理"), true);
+});
+
+test("AI recommendation normalization keeps only catalog ids with reasons", () => {
+  const normalized = normalizeTemplateRecommendations([
+    { templateId: "modern", reason: "适合产品技术岗位。" },
+    { templateId: "missing", reason: "不存在的模板。" },
+    { templateId: "classic", reason: "" },
+    { templateId: "modern", reason: "重复模板。" },
+    { templateId: "executive", reason: "适合资深候选人。" },
+  ], RESUME_TEMPLATES);
+
+  assert.deepEqual(normalized, [
+    { templateId: "modern", reason: "适合产品技术岗位。" },
+    { templateId: "executive", reason: "适合资深候选人。" },
+  ]);
 });

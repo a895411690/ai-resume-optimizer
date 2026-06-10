@@ -208,6 +208,10 @@ export default function Page() {
   const [recommendOpen, setRecommendOpen] = useState(false);
   const [recommendTargetRole, setRecommendTargetRole] = useState("");
   const [recommendWorkYears, setRecommendWorkYears] = useState("");
+  const [templateRecommendations, setTemplateRecommendations] = useState<Array<{ templateId: string; reason: string }>>([]);
+  const [templateRecommendLoading, setTemplateRecommendLoading] = useState(false);
+  const [templateRecommendError, setTemplateRecommendError] = useState("");
+  const [templateRecommendSource, setTemplateRecommendSource] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyList, setHistoryList] = useState<Array<{ id: string; type: string; input_summary: string; output_summary: string; model_tier: string; created_at: string }>>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -431,6 +435,47 @@ export default function Page() {
     const nextDiagnosis = await requestDiagnosis();
     if (nextDiagnosis) await requestOptimization(nextDiagnosis);
     setBusy(null);
+  }
+
+  function resolveRecommendUserType(): UserType {
+    const text = recommendWorkYears.trim();
+    if (/应届|实习|在校|毕业/.test(text)) return "fresh_graduate";
+    if (/转行|跨行|转型/.test(text)) return "career_switcher";
+    if (/10|资深|高级|专家|管理|负责人|总监/.test(text)) return "senior";
+    return userType;
+  }
+
+  async function requestTemplateRecommendation() {
+    setTemplateRecommendLoading(true);
+    setTemplateRecommendError("");
+    setTemplateRecommendSource("");
+    try {
+      const response = await fetch("/api/recommend-templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userType: resolveRecommendUserType(),
+          targetRole: recommendTargetRole || resume.position,
+          workYears: recommendWorkYears,
+          structuredResume: currentStructuredResume,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || data.error) throw new Error(data.error || "模板推荐失败");
+      setTemplateRecommendations(Array.isArray(data.recommendations) ? data.recommendations : []);
+      setTemplateRecommendSource(data.source === "deepseek" ? "DeepSeek 推荐" : "规则推荐");
+    } catch (exception) {
+      const fallback = recommendResumeTemplates({
+        userType: resolveRecommendUserType(),
+        targetRole: recommendTargetRole || resume.position,
+        structuredResume: currentStructuredResume,
+      }).slice(0, 5);
+      setTemplateRecommendations(fallback);
+      setTemplateRecommendSource("规则推荐");
+      setTemplateRecommendError(getErrorMessage(exception));
+    } finally {
+      setTemplateRecommendLoading(false);
+    }
   }
 
   function downloadPdf() {
@@ -1100,21 +1145,38 @@ export default function Page() {
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label className="text-xs">目标岗位</Label>
-                <Input className="h-8 text-xs" placeholder="例如：产品经理" value={recommendTargetRole} onChange={(e) => setRecommendTargetRole(e.target.value)} />
+                <Input className="h-8 text-xs" placeholder="例如：产品经理" value={recommendTargetRole} onChange={(e) => {
+                  setRecommendTargetRole(e.target.value);
+                  setTemplateRecommendations([]);
+                  setTemplateRecommendSource("");
+                }} />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">工作年限</Label>
-                <Input className="h-8 text-xs" placeholder="例如：3年" value={recommendWorkYears} onChange={(e) => setRecommendWorkYears(e.target.value)} />
+                <Input className="h-8 text-xs" placeholder="例如：3年" value={recommendWorkYears} onChange={(e) => {
+                  setRecommendWorkYears(e.target.value);
+                  setTemplateRecommendations([]);
+                  setTemplateRecommendSource("");
+                }} />
               </div>
             </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" type="button" disabled={templateRecommendLoading || !(recommendTargetRole || recommendWorkYears || resume.position)} onClick={requestTemplateRecommendation}>
+                {templateRecommendLoading ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Sparkles className="mr-1 h-3 w-3" />}
+                生成推荐
+              </Button>
+              {templateRecommendSource && <span className="text-xs text-muted-foreground">{templateRecommendSource}</span>}
+              {templateRecommendError && <span className="text-xs text-amber-700">AI 推荐暂不可用，已显示规则推荐</span>}
+            </div>
             {(recommendTargetRole || recommendWorkYears) && (() => {
-              const recommendations = recommendResumeTemplates({
+              const fallbackRecommendations = recommendResumeTemplates({
                 userType: recommendWorkYears.includes("应届") || recommendWorkYears.includes("实习") ? "fresh_graduate"
                   : recommendWorkYears.includes("10") || recommendWorkYears.includes("资深") || recommendWorkYears.includes("高级") ? "senior"
                   : userType,
                 targetRole: recommendTargetRole || resume.position,
                 structuredResume: currentStructuredResume,
-              });
+              }).slice(0, 5);
+              const recommendations = templateRecommendations.length ? templateRecommendations : fallbackRecommendations;
               return (
                 <div className="space-y-3">
                   {recommendations.map((rec) => {
