@@ -21,58 +21,47 @@ function titleLine(parts) {
 
 function buildStructuredResumeViewModel(value) {
   const resume = normalizeStructuredResumeV1(value);
-  const sections = [];
+  const skills = [...resume.skills.skill_hard, ...resume.skills.skill_soft, ...resume.skills.skill_level];
 
-  if (resume.optional.self_evaluation.length) {
-    sections.push({ title: "自我评价", items: resume.optional.self_evaluation.map((item) => ({ heading: "", bullets: [item] })) });
-  }
-
-  if (resume.education.length) {
-    sections.push({
+  // Build all sections keyed by their logical name
+  const sectionMap = {
+    self_evaluation: resume.optional.self_evaluation.length ? { title: "自我评价", items: resume.optional.self_evaluation.map((item) => ({ heading: "", bullets: [item] })) } : null,
+    education: resume.education.length ? {
       title: "教育经历",
       items: resume.education.map((item) => ({
         heading: titleLine([item.school, item.degree, item.major, item.time_range]),
         bullets: [...item.courses, ...item.honors],
       })),
-    });
-  }
-
-  if (resume.work.length) {
-    sections.push({
+    } : null,
+    work: resume.work.length ? {
       title: "工作/实习经历",
       items: resume.work.map((item) => ({
         heading: titleLine([item.company, item.position, item.time_range]),
         bullets: compact([item.job_content, ...item.job_result]),
       })),
-    });
-  }
-
-  if (resume.projects.length) {
-    sections.push({
+    } : null,
+    projects: resume.projects.length ? {
       title: "项目经历",
       items: resume.projects.map((item) => ({
         heading: titleLine([item.project_name, item.role]),
         bullets: compact([item.project_intro, item.duty, ...item.achievement]),
       })),
-    });
-  }
+    } : null,
+    skills: skills.length ? { title: "专业技能", items: [{ heading: "", bullets: skills }] } : null,
+    certificates: resume.skills.certificate_list.length ? { title: "技能证书", items: [{ heading: "", bullets: resume.skills.certificate_list }] } : null,
+    campus_exp: resume.optional.campus_exp.length ? { title: "校园经历", items: resume.optional.campus_exp.map((item) => ({ heading: "", bullets: [item] })) } : null,
+    manage_exp: resume.optional.manage_exp.length ? { title: "团队管理", items: resume.optional.manage_exp.map((item) => ({ heading: "", bullets: [item] })) } : null,
+  };
 
-  const skills = [...resume.skills.skill_hard, ...resume.skills.skill_soft, ...resume.skills.skill_level];
-  if (skills.length) {
-    sections.push({ title: "专业技能", items: [{ heading: "", bullets: skills }] });
-  }
+  // Default rendering order; respects custom sectionOrder from the editor
+  const defaultOrder = ["self_evaluation", "education", "work", "projects", "skills", "certificates", "campus_exp", "manage_exp"];
+  const order = Array.isArray(resume.meta?.sectionOrder) ? resume.meta.sectionOrder : defaultOrder;
 
-  if (resume.skills.certificate_list.length) {
-    sections.push({ title: "技能证书", items: [{ heading: "", bullets: resume.skills.certificate_list }] });
-  }
+  // Merge: custom order first, then any remaining sections not in the order list
+  const seen = new Set(order);
+  const fullOrder = [...order, ...defaultOrder.filter((k) => !seen.has(k))];
 
-  if (resume.optional.campus_exp.length) {
-    sections.push({ title: "校园经历", items: resume.optional.campus_exp.map((item) => ({ heading: "", bullets: [item] })) });
-  }
-
-  if (resume.optional.manage_exp.length) {
-    sections.push({ title: "团队管理", items: resume.optional.manage_exp.map((item) => ({ heading: "", bullets: [item] })) });
-  }
+  const sections = fullOrder.map((key) => sectionMap[key]).filter(Boolean);
 
   return {
     title: resume.basics.name || "我的简历",

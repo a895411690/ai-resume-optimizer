@@ -10,7 +10,7 @@ const EMPTY_STRUCTURED_RESUME = Object.freeze({
   projects: Object.freeze([]),
   skills: Object.freeze({ skill_hard: Object.freeze([]), skill_soft: Object.freeze([]), skill_level: Object.freeze([]), certificate_list: Object.freeze([]) }),
   optional: Object.freeze({ campus_exp: Object.freeze([]), self_evaluation: Object.freeze([]), manage_exp: Object.freeze([]), political_status: "" }),
-  meta: Object.freeze({ source: "empty", warnings: Object.freeze([]) }),
+  meta: Object.freeze({ source: "empty", warnings: Object.freeze([]), sectionOrder: null }),
 });
 
 function stringValue(value) {
@@ -111,6 +111,7 @@ function normalizeStructuredResumeV1(input = {}) {
     meta: {
       source: stringValue(source.meta?.source) || "structured-v1",
       warnings: arrayValue(source.meta?.warnings),
+      sectionOrder: Array.isArray(source.meta?.sectionOrder) ? source.meta.sectionOrder : null,
     },
   };
 }

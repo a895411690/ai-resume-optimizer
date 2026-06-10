@@ -1,6 +1,8 @@
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { normalizeStructuredResumeV1 } = require("./resume-schema.js");
 
+const DEFAULT_SECTION_ORDER = ["basics", "education", "work", "projects", "skills", "optional"];
+
 const ARRAY_SECTIONS = new Set(["education", "work", "projects"]);
 const SKILL_FIELDS = new Set(["skill_hard", "skill_soft", "skill_level", "certificate_list"]);
 const OPTIONAL_ARRAY_FIELDS = new Set(["campus_exp", "self_evaluation", "manage_exp"]);
@@ -77,9 +79,40 @@ function updateOptionalField(resume, key, value) {
   };
 }
 
+function reorderArrayItems(resume, section, fromIndex, toIndex) {
+  if (!ARRAY_SECTIONS.has(section)) return editableCopy(resume);
+  const current = editableCopy(resume);
+  const items = Array.isArray(current[section]) ? [...current[section]] : [];
+  if (fromIndex < 0 || fromIndex >= items.length || toIndex < 0 || toIndex >= items.length || fromIndex === toIndex) return current;
+  const [moved] = items.splice(fromIndex, 1);
+  items.splice(toIndex, 0, moved);
+  return { ...current, [section]: items };
+}
+
+function reorderSections(resume, fromIndex, toIndex) {
+  const current = editableCopy(resume);
+  const existing = current.meta?.sectionOrder || DEFAULT_SECTION_ORDER;
+  const order = [...existing];
+  if (fromIndex < 0 || fromIndex >= order.length || toIndex < 0 || toIndex >= order.length || fromIndex === toIndex) return current;
+  const [moved] = order.splice(fromIndex, 1);
+  order.splice(toIndex, 0, moved);
+  return {
+    ...current,
+    meta: { ...current.meta, sectionOrder: order },
+  };
+}
+
+function getSectionOrder(resume) {
+  const current = resume && typeof resume === "object" ? resume : {};
+  return (current.meta && Array.isArray(current.meta.sectionOrder) ? current.meta.sectionOrder : null) || DEFAULT_SECTION_ORDER;
+}
+
 module.exports = {
   addArrayItem,
+  getSectionOrder,
   removeArrayItem,
+  reorderArrayItems,
+  reorderSections,
   updateArrayItem,
   updateBasicsField,
   updateOptionalField,
