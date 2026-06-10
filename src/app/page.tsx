@@ -1108,6 +1108,10 @@ export default function Page() {
             )}
           </div>
         )}
+        <footer className="flex items-center justify-center gap-4 border-t bg-white px-3 py-2 text-[11px] text-muted-foreground">
+          <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" className="hover:text-slate-700">沪ICP备2026013388号</a>
+          <a href="https://beian.mps.gov.cn/#/query/webSearch?code=31011502405714" target="_blank" rel="noopener noreferrer" className="hover:text-slate-700">沪公网安备31011502405714号</a>
+        </footer>
       </main>
 
       <Dialog open={compareOpen} onOpenChange={setCompareOpen}>
