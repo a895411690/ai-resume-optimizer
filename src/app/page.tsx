@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useEffect, useRef, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import {
   AlertTriangle,
@@ -196,7 +196,37 @@ export default function Page() {
   const [version, setVersion] = useState<Version>("original");
   const [editorMode, setEditorMode] = useState<EditorMode>("structured");
   const [editorOpen, setEditorOpen] = useState(true);
+  const [editorHeight, setEditorHeight] = useState(38);
+  const editorHeightRef = useRef(38);
+  const isDraggingRef = useRef(false);
+  const editorYRef = useRef(0);
   const [workflowMode, setWorkflowMode] = useState<WorkflowMode>("fast");
+
+  const handleEditorResizeStart = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    isDraggingRef.current = true;
+    editorYRef.current = e.clientY;
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  }, []);
+
+  const handleEditorResizeMove = useCallback((e: React.PointerEvent) => {
+    if (!isDraggingRef.current) return;
+    const delta = editorYRef.current - e.clientY;
+    editorYRef.current = e.clientY;
+    const svh = window.innerHeight / 100;
+    const next = Math.max(20, Math.min(85, editorHeightRef.current + delta / svh));
+    editorHeightRef.current = next;
+    setEditorHeight(next);
+  }, []);
+
+  const handleEditorResizeEnd = useCallback(() => {
+    isDraggingRef.current = false;
+  }, []);
+
+  const resetEditorHeight = useCallback(() => {
+    editorHeightRef.current = 38;
+    setEditorHeight(38);
+  }, []);
   const [userType, setUserType] = useState<UserType>("auto");
   const [jdEnabled, setJdEnabled] = useState(false);
   const [jdText, setJdText] = useState("");
@@ -1025,7 +1055,17 @@ export default function Page() {
         </div>
 
         {editorOpen && (
-          <div className="flex h-[38svh] min-h-48 flex-col border-t bg-white md:h-56">
+          <div className="flex flex-col bg-white" style={{ height: `${editorHeight}svh`, minHeight: 192 }}>
+            <div
+              className="flex h-2 cursor-row-resize items-center justify-center border-t transition-colors hover:bg-blue-50 active:bg-blue-100"
+              onPointerDown={handleEditorResizeStart}
+              onPointerMove={handleEditorResizeMove}
+              onPointerUp={handleEditorResizeEnd}
+              onDoubleClick={resetEditorHeight}
+              title="拖动调整编辑器大小，双击恢复默认"
+            >
+              <div className="h-0.5 w-8 rounded-full bg-slate-300" />
+            </div>
             <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2 sm:px-4">
               <div className="flex items-center gap-2">
                 <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">简历编辑器</span>

@@ -104,7 +104,7 @@ test("mobile workspace keeps stacked layout and scrollable editor constraints", 
 
   assert.match(pageSource, /flex min-h-screen flex-col/);
   assert.match(pageSource, /md:flex-row/);
-  assert.match(pageSource, /h-\[38svh\] min-h-48/);
+  assert.match(pageSource, /cursor-row-resize/);
   assert.match(editorSource, /h-full overflow-auto/);
   assert.match(selectorSource, /flex-wrap/);
 });
