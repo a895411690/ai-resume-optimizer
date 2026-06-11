@@ -1,7 +1,7 @@
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { normalizeStructuredResumeV1 } = require("./resume-schema.js");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { normalizeResumeTemplateId } = require("./resume-templates.js");
+const { normalizeResumeTemplateId, getResumeTemplate } = require("./resume-templates.js");
 
 function escapeHtml(value) {
   return String(value || "")
@@ -88,48 +88,55 @@ function buildStructuredResumeViewModel(value) {
 }
 
 function getPreviewTemplateClasses(templateId) {
-  const id = normalizeResumeTemplateId(templateId);
+  const template = getResumeTemplate(normalizeResumeTemplateId(templateId));
+  const layout = template.layout;
+  const accent = template.preview.accent;
   const basePage = "mx-auto min-w-0 bg-white p-4 text-sm leading-relaxed shadow-sm sm:p-8 md:max-w-[794px] md:p-12 md:shadow-lg lg:min-h-[1123px] print:shadow-none print:p-0";
-  if (id === "modern") {
+  if (layout === "two-column") {
     return {
       page: `${basePage} md:p-0`,
-      header: "border-b border-slate-200 p-6 text-left md:border-b-0 md:bg-slate-900 md:text-white",
+      header: "border-b border-slate-200 p-6 text-left md:border-b-0 md:text-white",
       body: "md:grid md:grid-cols-[210px_minmax(0,1fr)]",
       main: "min-w-0 p-4 sm:p-8 md:p-10",
-      sidebar: "border-b bg-slate-50 p-4 text-xs sm:p-6 md:border-b-0 md:bg-slate-900 md:text-slate-100",
+      sidebar: "border-b bg-slate-50 p-4 text-xs sm:p-6 md:border-b-0 md:text-slate-100",
       sectionTitle: "mb-3 mt-5 break-words border-b border-gray-300 pb-1 text-base font-bold text-gray-800 sm:mt-6 sm:text-lg",
+      accent,
     };
   }
-  if (id === "executive") {
+  if (layout === "single-accent") {
     return {
       page: basePage,
-      header: "mb-6 border-l-4 border-blue-700 pb-4 pl-4 text-left",
+      header: "mb-6 border-l-4 pb-4 pl-4 text-left",
       body: "",
       main: "",
       sidebar: "",
-      sectionTitle: "mb-3 mt-5 break-words border-b border-blue-200 pb-1 text-base font-bold uppercase text-blue-700 sm:mt-6 sm:text-lg",
+      sectionTitle: "mb-3 mt-5 break-words pb-1 text-base font-bold uppercase sm:mt-6 sm:text-lg",
+      accent,
     };
   }
   return {
     page: basePage,
-    header: "mb-6 border-b-2 border-gray-800 pb-4 text-center",
+    header: "mb-6 border-b-2 pb-4 text-center",
     body: "",
     main: "",
     sidebar: "",
-    sectionTitle: "mb-3 mt-5 break-words border-b border-gray-300 pb-1 text-base font-bold text-gray-800 sm:mt-6 sm:text-lg",
+    sectionTitle: "mb-3 mt-5 break-words border-b pb-1 text-base font-bold text-gray-800 sm:mt-6 sm:text-lg",
+    accent,
   };
 }
 
 function getTemplatePrintCss(templateId) {
-  const id = normalizeResumeTemplateId(templateId);
+  const template = getResumeTemplate(normalizeResumeTemplateId(templateId));
+  const layout = template.layout;
+  const accent = template.preview.accent;
   const base = "body{font-family:Arial,'Microsoft YaHei',sans-serif;max-width:794px;margin:40px auto;padding:20px;font-size:13px;line-height:1.6;color:#111827}h1{font-size:22px;margin:0}h2{margin-top:20px;padding-bottom:4px;font-size:15px}h3{font-size:14px;margin-bottom:4px}li{margin-bottom:3px}.contact{font-size:12px;color:#4b5563;margin-top:8px}.section{break-inside:avoid}.resume-body{display:block}";
-  if (id === "modern") {
-    return `${base}.resume-body{display:grid;grid-template-columns:210px 1fr;gap:28px}.sidebar{background:#111827;color:#f8fafc;padding:24px}.main{padding:24px 0}.contact{color:#cbd5e1}h2{border-bottom:1px solid #d1d5db}.skills{margin-top:18px}`;
+  if (layout === "two-column") {
+    return `${base}.resume-body{display:grid;grid-template-columns:210px 1fr;gap:28px}.sidebar{background:${accent};color:#f8fafc;padding:24px}.main{padding:24px 0}.contact{color:#cbd5e1}h2{border-bottom:1px solid #d1d5db}.skills{margin-top:18px}`;
   }
-  if (id === "executive") {
-    return `${base}header{border-left:5px solid #1d4ed8;padding-left:14px;border-bottom:0}h2{border-bottom:2px solid #bfdbfe;color:#1d4ed8;text-transform:uppercase}`;
+  if (layout === "single-accent") {
+    return `${base}header{border-left:5px solid ${accent};padding-left:14px;border-bottom:0}h2{border-bottom:2px solid ${accent}33;color:${accent};text-transform:uppercase}`;
   }
-  return `${base}header{text-align:center;border-bottom:2px solid #111827;padding-bottom:12px}h2{border-bottom:1px solid #d1d5db}`;
+  return `${base}header{text-align:center;border-bottom:2px solid ${accent};padding-bottom:12px}h2{border-bottom:1px solid ${accent}44}`;
 }
 
 function renderSectionHtml(section) {
@@ -142,14 +149,16 @@ function renderSectionHtml(section) {
 }
 
 function renderTemplateExportHtml({ title, structuredResume, templateId }) {
-  const id = normalizeResumeTemplateId(templateId);
+  const template = getResumeTemplate(normalizeResumeTemplateId(templateId));
+  const id = template.id;
+  const layout = template.layout;
   const view = buildStructuredResumeViewModel(structuredResume);
   const documentTitle = title || view.title;
   const contact = view.contactItems.length ? `<div class="contact">${view.contactItems.map(escapeHtml).join(" · ")}</div>` : "";
   const skills = view.skills.length ? `<div class="skills"><h2>专业技能</h2><ul>${view.skills.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : "";
   const nonSkillSections = view.sections.filter((section) => section.title !== "专业技能");
   const sections = nonSkillSections.map(renderSectionHtml).join("");
-  const body = id === "modern"
+  const body = layout === "two-column"
     ? `<div class="resume-body"><aside class="sidebar"><header><h1>${escapeHtml(view.title)}</h1>${contact}</header>${skills}</aside><main class="main">${sections}</main></div>`
     : `<header><h1>${escapeHtml(view.title)}</h1>${contact}</header><main>${view.sections.map(renderSectionHtml).join("")}</main>`;
 
