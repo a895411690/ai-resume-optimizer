@@ -1,7 +1,7 @@
 "use client";
 
-import { Loader2, Plus, Sparkles, Trash2, GripVertical } from "lucide-react";
-import { useEffect, useRef, useCallback } from "react";
+import { Loader2, Pencil, Plus, Sparkles, Trash2, GripVertical } from "lucide-react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import type { ReactNode } from "react";
 import {
   DndContext,
@@ -34,6 +34,15 @@ import {
   getSectionOrder,
 } from "@/lib/resume-editor-model.js";
 import { normalizeStructuredResumeV1 } from "@/lib/resume-schema.js";
+
+const DEFAULT_SECTION_TITLES: Record<string, string> = {
+  basics: "个人信息",
+  education: "教育经历",
+  work: "工作/实习经历",
+  projects: "项目经历",
+  skills: "专业技能",
+  optional: "补充信息",
+};
 
 type StructuredResumeEditorProps = {
   structuredResume: Record<string, unknown>;
@@ -105,8 +114,58 @@ function SortableItem({ id, children }: { id: string; children: (dragHandleProps
   );
 }
 
-function Section({ title, moduleName, children, onOptimizeModule, optimizingModule, dragHandleProps }: {
+function EditableSectionTitle({ title, sectionId, onCustomTitleChange }: {
   title: string;
+  sectionId: string;
+  onCustomTitleChange: (sectionId: string, title: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(title);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing && inputRef.current) inputRef.current.select();
+  }, [editing]);
+
+  if (!editing) {
+    return (
+      <h3 className="flex items-center gap-1 text-xs font-semibold text-slate-900 group/title">
+        {title}
+        <button
+          type="button"
+          className="rounded p-0.5 text-slate-300 opacity-0 transition-opacity group-hover/title:opacity-100 hover:!text-blue-500"
+          onClick={() => { setDraft(title); setEditing(true); }}
+          title="编辑模块名称"
+        >
+          <Pencil className="h-3 w-3" />
+        </button>
+      </h3>
+    );
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      className="h-6 w-40 rounded border border-blue-300 bg-white px-1.5 text-xs font-semibold text-slate-900 outline-none focus:ring-1 focus:ring-blue-400"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        const next = draft.trim() || DEFAULT_SECTION_TITLES[sectionId] || title;
+        onCustomTitleChange(sectionId, next);
+        setEditing(false);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        if (e.key === "Escape") { setDraft(title); setEditing(false); }
+      }}
+    />
+  );
+}
+
+function Section({ title, sectionId, onCustomTitleChange, moduleName, children, onOptimizeModule, optimizingModule, dragHandleProps }: {
+  title: string;
+  sectionId: string;
+  onCustomTitleChange: (sectionId: string, title: string) => void;
   moduleName?: string;
   children: ReactNode;
   onOptimizeModule?: (moduleName: string) => void;
@@ -124,7 +183,7 @@ function Section({ title, moduleName, children, onOptimizeModule, optimizingModu
           >
             <GripVertical className="h-4 w-4" />
           </button>
-          <h3 className="text-xs font-semibold text-slate-900">{title}</h3>
+          <EditableSectionTitle title={title} sectionId={sectionId} onCustomTitleChange={onCustomTitleChange} />
         </div>
         {moduleName && onOptimizeModule && (
           <Button
@@ -147,10 +206,16 @@ function Section({ title, moduleName, children, onOptimizeModule, optimizingModu
 
 export function StructuredResumeEditor({ structuredResume, userType, onChange, onOptimizeModule, optimizingModule }: StructuredResumeEditorProps) {
   const latestDraftRef = useRef<Record<string, unknown>>(structuredResume);
-
   useEffect(() => {
     latestDraftRef.current = structuredResume;
   }, [structuredResume]);
+
+  function readCustomTitles(resume: Record<string, unknown>) {
+    const meta = resume.meta as Record<string, unknown> | undefined;
+    return (meta?.customTitles && typeof meta.customTitles === "object") ? meta.customTitles as Record<string, string> : {};
+  }
+
+  const customTitles = readCustomTitles(structuredResume);
 
   const resume = normalizeStructuredResumeV1(structuredResume);
 
@@ -158,6 +223,13 @@ export function StructuredResumeEditor({ structuredResume, userType, onChange, o
     latestDraftRef.current = next;
     onChange(next);
   }, [onChange]);
+
+  function handleCustomTitleChange(sectionId: string, nextTitle: string) {
+    const resolved = nextTitle.trim() || DEFAULT_SECTION_TITLES[sectionId] || sectionId;
+    const resume = latestDraftRef.current;
+    const meta = { ...(resume.meta as Record<string, unknown> || {}), customTitles: { ...customTitles, [sectionId]: resolved } };
+    commit({ ...resume, meta });
+  }
 
   function updateItem(section: ArraySection, index: number, patch: Record<string, unknown>) {
     commit(updateArrayItem(latestDraftRef.current, section, index, patch));
@@ -208,10 +280,12 @@ export function StructuredResumeEditor({ structuredResume, userType, onChange, o
 
   // Render a section block for a given sectionId, receiving dragHandleProps from SortableSection
   const renderSection = (sectionId: string, dragHandleProps: Record<string, unknown>) => {
+    const sectionTitle = customTitles[sectionId] || DEFAULT_SECTION_TITLES[sectionId] || sectionId;
+    const sectionTitleProps = { sectionId, customTitles, onCustomTitleChange: handleCustomTitleChange };
     switch (sectionId) {
       case "basics":
         return (
-          <Section title="个人信息" moduleName="basics" onOptimizeModule={onOptimizeModule} optimizingModule={optimizingModule} dragHandleProps={dragHandleProps}>
+          <Section title={sectionTitle} {...sectionTitleProps} moduleName="basics" onOptimizeModule={onOptimizeModule} optimizingModule={optimizingModule} dragHandleProps={dragHandleProps}>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               <Field label="姓名" value={basics.name} onChange={(value) => commit(updateBasicsField(latestDraftRef.current, "name", value))} />
               <Field label="电话" value={basics.phone} onChange={(value) => commit(updateBasicsField(latestDraftRef.current, "phone", value))} />
@@ -225,7 +299,7 @@ export function StructuredResumeEditor({ structuredResume, userType, onChange, o
 
       case "education":
         return (
-          <Section title="教育经历" dragHandleProps={dragHandleProps}>
+          <Section title={sectionTitle} {...sectionTitleProps} dragHandleProps={dragHandleProps}>
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={makeItemDragEndHandler("education", educationItems)}>
               <SortableContext items={educationItems.map((_, i) => `education-${i}`)} strategy={verticalListSortingStrategy}>
                 <div className="space-y-3">
@@ -275,7 +349,7 @@ export function StructuredResumeEditor({ structuredResume, userType, onChange, o
 
       case "work":
         return (
-          <Section title="工作/实习经历" dragHandleProps={dragHandleProps}>
+          <Section title={sectionTitle} {...sectionTitleProps} dragHandleProps={dragHandleProps}>
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={makeItemDragEndHandler("work", workItems)}>
               <SortableContext items={workItems.map((_, i) => `work-${i}`)} strategy={verticalListSortingStrategy}>
                 <div className="space-y-3">
@@ -323,7 +397,7 @@ export function StructuredResumeEditor({ structuredResume, userType, onChange, o
 
       case "projects":
         return (
-          <Section title="项目经历" dragHandleProps={dragHandleProps}>
+          <Section title={sectionTitle} {...sectionTitleProps} dragHandleProps={dragHandleProps}>
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={makeItemDragEndHandler("projects", projectItems)}>
               <SortableContext items={projectItems.map((_, i) => `projects-${i}`)} strategy={verticalListSortingStrategy}>
                 <div className="space-y-3">
@@ -371,7 +445,7 @@ export function StructuredResumeEditor({ structuredResume, userType, onChange, o
 
       case "skills":
         return (
-          <Section title="专业技能" moduleName="skills" onOptimizeModule={onOptimizeModule} optimizingModule={optimizingModule} dragHandleProps={dragHandleProps}>
+          <Section title={sectionTitle} {...sectionTitleProps} moduleName="skills" onOptimizeModule={onOptimizeModule} optimizingModule={optimizingModule} dragHandleProps={dragHandleProps}>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <MultiLineField label="硬技能" value={lines(skills.skill_hard)} onChange={(value) => commit(updateSkillsField(latestDraftRef.current, "skill_hard", value))} />
               <MultiLineField label="软技能" value={lines(skills.skill_soft)} onChange={(value) => commit(updateSkillsField(latestDraftRef.current, "skill_soft", value))} />
@@ -383,7 +457,7 @@ export function StructuredResumeEditor({ structuredResume, userType, onChange, o
 
       case "optional":
         return (
-          <Section title="补充信息" moduleName="optional" onOptimizeModule={onOptimizeModule} optimizingModule={optimizingModule} dragHandleProps={dragHandleProps}>
+          <Section title={sectionTitle} {...sectionTitleProps} moduleName="optional" onOptimizeModule={onOptimizeModule} optimizingModule={optimizingModule} dragHandleProps={dragHandleProps}>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {(userType === "fresh_graduate" || userType === "auto") && (
                 <MultiLineField label="校园经历" value={lines(optional.campus_exp)} onChange={(value) => commit(updateOptionalField(latestDraftRef.current, "campus_exp", value))} />
