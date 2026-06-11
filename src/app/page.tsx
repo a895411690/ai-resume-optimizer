@@ -181,6 +181,21 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "未知错误";
 }
 
+function getAuthErrorMessage(error: unknown) {
+  const message = getErrorMessage(error);
+  const normalized = message.toLowerCase();
+  if (normalized.includes("email not confirmed")) {
+    return "邮箱尚未验证，请先打开注册邮件完成验证后再登录。";
+  }
+  if (normalized.includes("invalid login credentials")) {
+    return "邮箱或密码错误，请检查后重试。";
+  }
+  if (normalized.includes("user already registered") || normalized.includes("already registered")) {
+    return "该邮箱已注册，请直接登录。";
+  }
+  return message;
+}
+
 function formatImportedText(text: string) {
   return normalizeResumeMarkdown(text);
 }
@@ -359,7 +374,7 @@ export default function Page() {
         if (data.session?.user) {
           setUser({ id: data.session.user.id, email: data.session.user.email || email });
         } else {
-          setAuthError("注册成功，请切换到登录模式登录");
+          setAuthError("注册成功，请查收邮箱并完成验证后再登录。");
           setAuthMode("login");
         }
         return;
@@ -371,7 +386,7 @@ export default function Page() {
       setUser({ id: data.user.id, email: data.user.email || email });
       setDemo(false);
     } catch (exception) {
-      setAuthError(getErrorMessage(exception));
+      setAuthError(getAuthErrorMessage(exception));
     } finally {
       setAuthLoading(false);
     }

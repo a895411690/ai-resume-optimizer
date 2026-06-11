@@ -19,6 +19,29 @@ function titleLine(parts) {
   return compact(parts).join("｜");
 }
 
+function resolveDisplaySectionOrder(sectionOrder) {
+  const defaultOrder = ["self_evaluation", "education", "work", "projects", "skills", "certificates", "campus_exp", "manage_exp"];
+  const editorSectionMap = {
+    basics: [],
+    education: ["education"],
+    work: ["work"],
+    projects: ["projects"],
+    skills: ["skills", "certificates"],
+    optional: ["self_evaluation", "campus_exp", "manage_exp"],
+  };
+  const sourceOrder = Array.isArray(sectionOrder) ? sectionOrder : defaultOrder;
+  const resolved = [];
+
+  for (const key of sourceOrder) {
+    const mappedKeys = editorSectionMap[key] || [key];
+    for (const mappedKey of mappedKeys) {
+      if (!resolved.includes(mappedKey)) resolved.push(mappedKey);
+    }
+  }
+
+  return [...resolved, ...defaultOrder.filter((key) => !resolved.includes(key))];
+}
+
 function buildStructuredResumeViewModel(value) {
   const resume = normalizeStructuredResumeV1(value);
   const skills = [...resume.skills.skill_hard, ...resume.skills.skill_soft, ...resume.skills.skill_level];
@@ -53,14 +76,7 @@ function buildStructuredResumeViewModel(value) {
     manage_exp: resume.optional.manage_exp.length ? { title: "团队管理", items: resume.optional.manage_exp.map((item) => ({ heading: "", bullets: [item] })) } : null,
   };
 
-  // Default rendering order; respects custom sectionOrder from the editor
-  const defaultOrder = ["self_evaluation", "education", "work", "projects", "skills", "certificates", "campus_exp", "manage_exp"];
-  const order = Array.isArray(resume.meta?.sectionOrder) ? resume.meta.sectionOrder : defaultOrder;
-
-  // Merge: custom order first, then any remaining sections not in the order list
-  const seen = new Set(order);
-  const fullOrder = [...order, ...defaultOrder.filter((k) => !seen.has(k))];
-
+  const fullOrder = resolveDisplaySectionOrder(resume.meta?.sectionOrder);
   const sections = fullOrder.map((key) => sectionMap[key]).filter(Boolean);
 
   return {

@@ -71,6 +71,12 @@ const structuredResume = {
   meta: {},
 };
 
+const customOrderedResume = {
+  ...structuredResume,
+  optional: { self_evaluation: ["结果导向"], campus_exp: ["学生会负责人"], manage_exp: ["带领 10 人团队"], political_status: "" },
+  meta: { sectionOrder: ["basics", "optional", "work", "projects", "skills", "education"] },
+};
+
 test("word template profiles map catalog layouts into export profiles", () => {
   assert.equal(getWordTemplateProfile("classic").layout, "single");
   assert.equal(getWordTemplateProfile("modern").isTwoColumn, true);
@@ -101,6 +107,15 @@ test("single and accent templates keep resume sections in document body", () => 
   assert.equal(singleText.includes("工作/实习经历"), true);
   assert.equal(singleText.includes("专业技能"), true);
   assert.match(accentText, /1d4ed8/i);
+});
+
+test("word export follows editor section order for optional information", () => {
+  const doc = buildResumeWordDocument({ docx: fakeDocx, structuredResume: customOrderedResume, templateId: "classic" });
+  const text = JSON.stringify(doc);
+
+  assert.ok(text.indexOf("自我评价") < text.indexOf("工作/实习经历"));
+  assert.ok(text.indexOf("校园经历") < text.indexOf("工作/实习经历"));
+  assert.ok(text.indexOf("团队管理") < text.indexOf("工作/实习经历"));
 });
 
 test("page word export delegates document construction to the helper", () => {
