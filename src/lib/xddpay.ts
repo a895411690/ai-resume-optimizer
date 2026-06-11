@@ -24,7 +24,7 @@ function buildSignString(params: [string, string | number][]): string {
   return params
     .filter(([, v]) => v !== undefined && v !== null)
     .map(([k, v]) => `${k}=${v}`)
-    .join("&") + getSecret();
+    .join("&") + "&" + getSecret();
 }
 
 function md5Sign(str: string): string {
