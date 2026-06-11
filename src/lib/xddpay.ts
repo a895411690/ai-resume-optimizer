@@ -11,7 +11,11 @@ export const PRODUCTS = {
   lifetime_vip: { code: "lifetime_vip", name: "永久VIP", money: 99.00, credits: 0, lifetimeVip: true },
 } as const;
 
-export type ProductCode = keyof typeof PRODUCTS;
+
+const PRODUCT_SUBJECTS: Record<string, string> = {
+  credit_10: "AI-Resume-Credit10",
+  lifetime_vip: "AI-Resume-LifetimeVIP",
+};export type ProductCode = keyof typeof PRODUCTS;
 
 function getAppId() { return process.env.XDDPAY_APP_ID || ""; }
 function getSecret() { return process.env.XDDPAY_SECRET || ""; }
@@ -76,15 +80,16 @@ export async function createPaymentOrder(params: {
   });
   if (dbError) throw new Error(dbError.message || "订单创建失败");
 
+  const asciiSubject = PRODUCT_SUBJECTS[product.code] || product.code;
   const appId = getAppId();
   const paySign = signPayment({
-    order_no: orderNo, subject: product.name,
+    order_no: orderNo, subject: asciiSubject,
     pay_type: payType, money: product.money.toFixed(2), app_id: appId, extra: product.code,
   });
 
   const formData = new URLSearchParams();
   formData.append("order_no", orderNo);
-  formData.append("subject", product.name);
+  formData.append("subject", asciiSubject);
   formData.append("pay_type", String(payType));
   formData.append("money", product.money.toFixed(2));
   formData.append("app_id", appId);
