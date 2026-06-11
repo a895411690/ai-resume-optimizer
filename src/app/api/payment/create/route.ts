@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuthenticatedUser } from "@/lib/api-auth";
-import { createPaymentOrder, generateOrderNo, type PayType } from "@/lib/xddpay";
+import { createPaymentOrder, generateOrderNo, PRODUCTS, type PayType, type ProductCode } from "@/lib/xddpay";
 
 export async function POST(req: NextRequest) {
   const auth = await requireAuthenticatedUser(req);
@@ -8,20 +8,16 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const payType: PayType = body.payType === 44 ? 44 : 43;
-    const money = Number(body.money) || 29.9;
-
-    if (money < 0.01 || money > 9999) {
-      return NextResponse.json({ error: "金额无效" }, { status: 400 });
+    const productCode: string = body.productCode || "";
+    const product = PRODUCTS[productCode as ProductCode];
+    if (!product) {
+      return NextResponse.json({ error: "无效的商品类型" }, { status: 400 });
     }
 
+    const payType: PayType = body.payType === 44 ? 44 : 43;
     const orderNo = generateOrderNo();
     const result = await createPaymentOrder({
-      userId: auth.user.id,
-      orderNo,
-      payType,
-      money,
-      subject: `VIP会员-${money}元`,
+      userId: auth.user.id, orderNo, payType, product,
     });
 
     return NextResponse.json({ orderNo, ...result });

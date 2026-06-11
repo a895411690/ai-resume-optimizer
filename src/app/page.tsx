@@ -75,15 +75,16 @@ type Strength = "conservative" | "professional" | "strong";
 type CloudSaveStatus = "idle" | "saving" | "saved" | "failed";
 type EntitlementState = {
   isVip: boolean;
+  isLifetimeVip: boolean;
   vipExpiresAt: string | null;
   freeOptimizationUsed: boolean;
   remainingFreeOptimizations: number;
+  optimizationCredits: number;
 };
 
 type ResumeState = {
   title: string;
-  position: string;
-  original_content: string;
+  position: string;  original_content: string;
   optimized_content: string;
   structuredResume: Record<string, unknown>;
   optimizedStructuredResume: Record<string, unknown> | null;
@@ -309,11 +310,11 @@ export default function Page() {
   const [entitlement, setEntitlement] = useState<EntitlementState | null>(null);
   const [entitlementLoading, setEntitlementLoading] = useState(false);
   const [vipDialogOpen, setVipDialogOpen] = useState(false);
-  const [paymentPayType, setPaymentPayType] = useState<43 | 44>(43);
+  const [paymentProductCode, setPaymentProductCode] = useState<string>("credit_10");
   const [paymentOrderNo, setPaymentOrderNo] = useState<string | null>(null);
   const [paymentQrImg, setPaymentQrImg] = useState<string | null>(null);
   const [paymentQrCode, setPaymentQrCode] = useState<string | null>(null);
-  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [paymentError, setPaymentError] = useState("");  const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentPolling, setPaymentPolling] = useState(false);  const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -538,6 +539,7 @@ export default function Page() {
   function decrementLocalOptimizationCount() {
     setEntitlement((prev) => {
       if (!prev || prev.isVip) return prev;
+      if (prev.optimizationCredits > 0) return { ...prev, optimizationCredits: prev.optimizationCredits - 1 };
       return { ...prev, remainingFreeOptimizations: Math.max(0, prev.remainingFreeOptimizations - 1), freeOptimizationUsed: true };
     });
   }
@@ -545,6 +547,7 @@ export default function Page() {
   function rollbackLocalOptimizationCount() {
     setEntitlement((prev) => {
       if (!prev || prev.isVip) return prev;
+      if (prev.optimizationCredits >= 0 && !prev.freeOptimizationUsed) return { ...prev, optimizationCredits: prev.optimizationCredits + 1 };
       return { ...prev, remainingFreeOptimizations: Math.min(1, prev.remainingFreeOptimizations + 1), freeOptimizationUsed: false };
     });
   }
@@ -560,14 +563,13 @@ export default function Page() {
       setVipDialogOpen(true);
       return false;
     }
-    if (entitlement && !entitlement.isVip && entitlement.remainingFreeOptimizations <= 0) {
+    if (entitlement && !entitlement.isVip && entitlement.optimizationCredits <= 0 && entitlement.remainingFreeOptimizations <= 0) {
       setError(VIP_REQUIRED_MESSAGE);
       setVipDialogOpen(true);
       return false;
     }
     return true;
   }
-
   function handleVipRequired(message = VIP_REQUIRED_MESSAGE) {
     setError(message);
     setVipDialogOpen(true);
@@ -579,32 +581,30 @@ export default function Page() {
     setPaymentQrCode(null);
     setPaymentLoading(false);
     setPaymentPolling(false);
+    setPaymentError("");
   }
 
-  async function handleCreatePayment() {
-    if (!user) return;
+  async function handleCreatePayment(productCode: string, payType: 43 | 44) {
+    if (!user) { setPaymentError("请先登录后再购买"); return; }
     setPaymentLoading(true);
-    setError("");
+    setPaymentError("");
+    setPaymentProductCode(productCode);
     try {
       const response = await fetch("/api/payment/create", {
         method: "POST",
         headers: await getAuthHeaders(),
-        body: JSON.stringify({ payType: paymentPayType, money: 29.9 }),
+        body: JSON.stringify({ productCode, payType }),
       });
       const data = await response.json();
       if (!response.ok || data.error) throw new Error(data.error || "创建订单失败");
       setPaymentOrderNo(data.orderNo);
-      if (data.qrImg) {
-        setPaymentQrImg(data.qrImg);
-      }
-      if (data.qrCode) {
-        setPaymentQrCode(data.qrCode);
-      }
-      // Start polling for payment status
+      if (data.qrImg) setPaymentQrImg(data.qrImg);
+      if (data.qrCode) setPaymentQrCode(data.qrCode);
+      if (!data.qrImg && !data.qrCode) throw new Error("支付接口未返回二维码，请重试或联系客服");
       setPaymentPolling(true);
       pollPaymentStatus(data.orderNo);
     } catch (exception) {
-      setError(getErrorMessage(exception));
+      setPaymentError(getErrorMessage(exception));
     } finally {
       setPaymentLoading(false);
     }
@@ -630,8 +630,7 @@ export default function Page() {
       }
     }
     setPaymentPolling(false);
-  }
-  async function handleLogout() {
+  }  async function handleLogout() {
     if (!demo) await supabase.auth.signOut();
     setDemo(false);
     setUser(null);
@@ -981,10 +980,11 @@ export default function Page() {
     if (demo) return "Demo：可免费诊断，优化需登录";
     if (entitlementLoading) return "权益加载中";
     if (!entitlement) return "登录后查看优化权益";
+    if (entitlement.isLifetimeVip) return "永久 VIP";
     if (entitlement.isVip) return `VIP 有效期至 ${formatVipTime(entitlement.vipExpiresAt)}`;
+    if (entitlement.optimizationCredits > 0) return `优化次数剩余 ${entitlement.optimizationCredits} 次`;
     return entitlement.remainingFreeOptimizations > 0 ? "免费优化剩余 1 次" : "免费优化已用完";
   }
-
   function getTemplateName(templateId: string | null) {
     return getResumeTemplate(normalizeResumeTemplateId(templateId || DEFAULT_TEMPLATE_ID)).name;
   }
@@ -1481,66 +1481,88 @@ export default function Page() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Crown className="h-5 w-5 text-blue-600" />
-              开通 VIP
+              开通优化权益
             </DialogTitle>
             <DialogDescription>
-              免费优化次数用完后，开通 VIP 可继续使用整篇优化、诊断并优化和模块 AI 优化。
+              选择适合你的方案，解锁 AI 优化功能。
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid gap-2 rounded-lg border bg-slate-50 p-3 text-xs text-slate-700">
               <div className="flex items-center justify-between">
                 <span>整篇简历优化</span>
-                <span className="font-semibold text-blue-700">不限次</span>
+                <span className="font-semibold text-blue-700">支持</span>
               </div>
               <div className="flex items-center justify-between">
                 <span>模块级 AI 优化</span>
-                <span className="font-semibold text-blue-700">不限次</span>
+                <span className="font-semibold text-blue-700">支持</span>
               </div>
               <div className="flex items-center justify-between">
                 <span>JD 匹配优化</span>
                 <span className="font-semibold text-blue-700">支持</span>
               </div>
             </div>
-            <div className="flex items-center justify-between rounded-lg border bg-slate-50 px-4 py-3">
-              <div>
-                <p className="text-sm font-semibold text-slate-800">VIP 月卡</p>
-                <p className="text-xs text-slate-500">30天不限次优化</p>
-              </div>
-              <span className="text-lg font-bold text-blue-600">¥29.9</span>
-            </div>
-            {!paymentQrImg && !paymentQrCode && (
-              <div className="grid grid-cols-2 gap-3">
+
+            {!paymentQrImg && !paymentQrCode ? (
+              <div className="space-y-3">
                 <button
                   type="button"
-                  disabled={paymentLoading}
-                  onClick={() => { setPaymentPayType(44); setTimeout(() => handleCreatePayment(), 50); }}
-                  className="flex flex-col items-center gap-2 rounded-lg border bg-white p-4 transition hover:border-green-400 hover:shadow-sm disabled:opacity-50"
+                  onClick={() => setPaymentProductCode("credit_10")}
+                  className={`w-full rounded-lg border p-3 text-left transition ${paymentProductCode === "credit_10" ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500" : "border-slate-200 bg-white hover:border-blue-300"}`}
                 >
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-500 text-white">
-                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 01.213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.295.295a.326.326 0 00.167-.054l1.903-1.114a.864.864 0 01.717-.098 10.16 10.16 0 002.837.403c.276 0 .543-.027.811-.05-.857-2.578.157-4.972 1.932-6.446 1.703-1.415 3.882-1.98 5.853-1.838-.576-3.583-4.196-6.348-8.596-6.348zM5.785 5.991c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 01-1.162 1.178A1.17 1.17 0 014.623 7.17c0-.651.52-1.18 1.162-1.18zm5.813 0c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 01-1.162 1.178 1.17 1.17 0 01-1.162-1.178c0-.651.52-1.18 1.162-1.18zm5.34 2.867c-1.797-.052-3.746.512-5.28 1.786-1.72 1.428-2.687 3.72-1.78 6.22.942 2.453 3.666 4.229 6.884 4.229.826 0 1.622-.12 2.361-.336a.722.722 0 01.598.082l1.584.926a.272.272 0 00.14.045.246.246 0 00.245-.245c0-.06-.024-.12-.04-.178l-.325-1.233a.492.492 0 01.177-.554C23.018 18.514 24 16.89 24 15.074c0-3.188-3.056-5.843-7.062-6.216zM14.033 13.4c.535 0 .969.44.969.982a.976.976 0 01-.969.983.976.976 0 01-.969-.983c0-.542.434-.982.97-.982zm4.844 0c.535 0 .969.44.969.982a.976.976 0 01-.969.983.976.976 0 01-.969-.983c0-.542.434-.982.97-.982z"/></svg>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">次卡 10 次</p>
+                      <p className="text-xs text-slate-500">10 次 AI 优化，用完为止</p>
+                    </div>
+                    <span className="text-lg font-bold text-blue-600">¥9.9</span>
                   </div>
-                  <span className="text-xs font-semibold text-slate-800">微信支付</span>
-                  {paymentLoading && paymentPayType === 44 && <span className="text-[10px] text-slate-400">加载中...</span>}
                 </button>
                 <button
                   type="button"
-                  disabled={paymentLoading}
-                  onClick={() => { setPaymentPayType(43); setTimeout(() => handleCreatePayment(), 50); }}
-                  className="flex flex-col items-center gap-2 rounded-lg border bg-white p-4 transition hover:border-blue-400 hover:shadow-sm disabled:opacity-50"
+                  onClick={() => setPaymentProductCode("lifetime_vip")}
+                  className={`w-full rounded-lg border p-3 text-left transition ${paymentProductCode === "lifetime_vip" ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500" : "border-slate-200 bg-white hover:border-blue-300"}`}
                 >
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-500 text-white">
-                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor"><path d="M21.422 15.358c-3.32-1.326-6.092-3.015-6.092-3.015s1.386-3.108 1.75-5.075H13.5V5.58h5.04V4.15H13.5V1.6h-2.88v2.55H5.58v1.43h5.04v1.688H7.2v1.585h8.063c-.284 1.188-.937 2.813-.937 2.813s-3.606-1.497-5.95-1.497C5.04 10.769 2.4 12.99 2.4 16.2c0 3.21 2.79 5.4 6.3 5.4 2.766 0 4.95-1.553 6.488-3.586 2.22 1.338 5.79 2.886 7.612 3.348V15.358zM8.31 19.35c-2.31 0-3.87-1.38-3.87-3.15 0-1.77 1.65-3.15 3.87-3.15 2.22 0 4.38 1.38 5.85 3.15-1.47 1.77-3.63 3.15-5.85 3.15z"/></svg>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">永久 VIP</p>
+                      <p className="text-xs text-slate-500">无限次优化，永久有效</p>
+                    </div>
+                    <span className="text-lg font-bold text-blue-600">¥99</span>
                   </div>
-                  <span className="text-xs font-semibold text-slate-800">支付宝</span>
-                  {paymentLoading && paymentPayType === 43 && <span className="text-[10px] text-slate-400">加载中...</span>}
                 </button>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    disabled={paymentLoading}
+                    onClick={() => handleCreatePayment(paymentProductCode, 44)}
+                    className="flex flex-col items-center gap-2 rounded-lg border bg-white p-3 transition hover:border-green-400 hover:shadow-sm disabled:opacity-50"
+                  >
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-green-500 text-white">
+                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor"><path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 01.213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.295.295a.326.326 0 00.167-.054l1.903-1.114a.864.864 0 01.717-.098 10.16 10.16 0 002.837.403c.276 0 .543-.027.811-.05-.857-2.578.157-4.972 1.932-6.446 1.703-1.415 3.882-1.98 5.853-1.838-.576-3.583-4.196-6.348-8.596-6.348zM5.785 5.991c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 01-1.162 1.178A1.17 1.17 0 014.623 7.17c0-.651.52-1.18 1.162-1.18zm5.813 0c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 01-1.162 1.178 1.17 1.17 0 01-1.162-1.178c0-.651.52-1.18 1.162-1.18z"/></svg>
+                    </div>
+                    <span className="text-xs font-semibold text-slate-800">微信支付</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={paymentLoading}
+                    onClick={() => handleCreatePayment(paymentProductCode, 43)}
+                    className="flex flex-col items-center gap-2 rounded-lg border bg-white p-3 transition hover:border-blue-400 hover:shadow-sm disabled:opacity-50"
+                  >
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-500 text-white">
+                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor"><path d="M21.422 15.358c-3.32-1.326-6.092-3.015-6.092-3.015s1.386-3.108 1.75-5.075H13.5V5.58h5.04V4.15H13.5V1.6h-2.88v2.55H5.58v1.43h5.04v1.688H7.2v1.585h8.063c-.284 1.188-.937 2.813-.937 2.813s-3.606-1.497-5.95-1.497C5.04 10.769 2.4 12.99 2.4 16.2c0 3.21 2.79 5.4 6.3 5.4 2.766 0 4.95-1.553 6.488-3.586 2.22 1.338 5.79 2.886 7.612 3.348V15.358zM8.31 19.35c-2.31 0-3.87-1.38-3.87-3.15 0-1.77 1.65-3.15 3.87-3.15 2.22 0 4.38 1.38 5.85 3.15-1.47 1.77-3.63 3.15-5.85 3.15z"/></svg>
+                    </div>
+                    <span className="text-xs font-semibold text-slate-800">支付宝</span>
+                  </button>
+                </div>
+                {paymentLoading && (
+                  <p className="text-center text-xs text-blue-500">正在创建订单...</p>
+                )}
               </div>
-            )}
-            {(paymentQrImg || paymentQrCode) && (
+            ) : (
               <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-blue-200 bg-blue-50/60 p-5 text-center">
                 <p className="text-sm font-semibold text-slate-800">
-                  {paymentPayType === 44 ? "请使用微信扫码支付" : "请使用支付宝扫码支付"}
+                  {paymentProductCode === "lifetime_vip" ? "永久 VIP" : "次卡 10 次"} — 请扫码支付
                 </p>
                 <p className="text-xs text-slate-500">订单号: {paymentOrderNo}</p>
                 {paymentQrImg && (
@@ -1557,9 +1579,12 @@ export default function Page() {
                   className="text-xs text-slate-500 underline"
                   onClick={resetPaymentState}
                 >
-                  重新选择支付方式
+                  重新选择
                 </button>
               </div>
+            )}
+            {paymentError && (
+              <p className="text-center text-xs text-red-500">{paymentError}</p>
             )}
             <div className="text-center">
               <a

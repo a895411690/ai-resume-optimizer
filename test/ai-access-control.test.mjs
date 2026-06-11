@@ -25,7 +25,8 @@ test("AI access control reserves optimization access and supports demo diagnosis
 
   assert.match(source, /DEMO_DAILY_DIAGNOSIS_LIMIT = 3/);
   assert.match(source, /reserveDemoDiagnosisAccess/);
-  assert.match(source, /reserveOptimizationAccess/);
+  assert.match(source, /optimization_credits/);
+  assert.match(source, /lifetime_vip/);  assert.match(source, /reserveOptimizationAccess/);
   assert.match(source, /free_optimization_used/);
   assert.match(source, /VIP_REQUIRED/);
   assert.match(source, /markAiUsageCompleted/);
