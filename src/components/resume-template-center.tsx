@@ -32,7 +32,62 @@ function renderTemplatePreview(template: (typeof RESUME_TEMPLATES)[number]) {
   const isAccent = template.preview.layout === "single-accent";
   return (
     <div className="w-full rounded bg-white p-3 shadow-sm" style={{ minHeight: 100 }}>
-      {isAccent ? (
+      {template.preview.layout === "timeline" ? (
+        <>
+          <div className="mx-auto h-2 w-14 rounded bg-slate-800" />
+          <div className="mx-auto mt-1 h-1.5 w-20 rounded bg-slate-200" />
+          <div className="mt-2 ml-2 border-l-2 space-y-2 pl-3" style={{ borderColor: accent }}>
+            <div>
+              <div className="h-1.5 w-10 rounded bg-slate-300" style={{ position: "relative" }}>
+                <div className="absolute -left-[7px] top-[-2px] h-2 w-2 rounded-full" style={{ backgroundColor: accent }} />
+              </div>
+              <div className="mt-0.5 h-1.5 w-full rounded bg-slate-200" />
+              <div className="mt-0.5 h-1.5 w-4/5 rounded bg-slate-200" />
+            </div>
+            <div>
+              <div className="h-1.5 w-12 rounded bg-slate-300" style={{ position: "relative" }}>
+                <div className="absolute -left-[7px] top-[-2px] h-2 w-2 rounded-full" style={{ backgroundColor: accent }} />
+              </div>
+              <div className="mt-0.5 h-1.5 w-full rounded bg-slate-200" />
+              <div className="mt-0.5 h-1.5 w-2/3 rounded bg-slate-200" />
+            </div>
+          </div>
+        </>
+      ) : template.preview.layout === "infographic" ? (
+        <>
+          <div className="rounded px-3 py-2 text-center" style={{ backgroundColor: accent }}>
+            <div className="mx-auto h-2 w-14 rounded bg-white/60" />
+            <div className="mt-1.5 flex flex-wrap justify-center gap-1">
+              <div className="h-1.5 w-8 rounded-full bg-white/30" />
+              <div className="h-1.5 w-10 rounded-full bg-white/30" />
+              <div className="h-1.5 w-7 rounded-full bg-white/30" />
+              <div className="h-1.5 w-9 rounded-full bg-white/30" />
+            </div>
+          </div>
+          <div className="mt-2 space-y-1">
+            <div className="h-1.5 w-full rounded bg-slate-200" />
+            <div className="h-1.5 w-4/5 rounded bg-slate-200" />
+            <div className="h-1.5 w-full rounded bg-slate-200" />
+            <div className="h-1.5 w-2/3 rounded bg-slate-200" />
+          </div>
+        </>
+      ) : template.preview.layout === "sidebar-right" ? (
+        <div className="grid grid-cols-[1fr_38px] gap-1.5">
+          <div className="space-y-1">
+            <div className="h-2 w-12 rounded bg-slate-800" />
+            <div className="h-1.5 rounded bg-slate-200" />
+            <div className="h-1.5 w-4/5 rounded bg-slate-200" />
+            <div className="h-1.5 rounded bg-slate-200" />
+            <div className="h-1.5 w-2/3 rounded bg-slate-200" />
+          </div>
+          <div className="space-y-1">
+            <div className="h-7 rounded" style={{ backgroundColor: accent }} />
+            <div className="h-1.5 rounded bg-slate-300" />
+            <div className="h-1.5 rounded bg-slate-300" />
+            <div className="h-1.5 rounded bg-slate-300" />
+          </div>
+        </div>
+      ) : isAccent ? (
         <>
           <div className="flex items-center gap-2">
             <div className="h-5 w-1 rounded" style={{ backgroundColor: accent }} />
