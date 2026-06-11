@@ -7,6 +7,7 @@ import {
 import { chooseDeepSeekModel } from "@/lib/deepseek-model-router.js";
 import { normalizeStructuredResumeV1, renderStructuredResumeV1Markdown } from "@/lib/resume-schema.js";
 import { requireAuthenticatedUser } from "@/lib/api-auth";
+import { markAiUsageCompleted, markAiUsageFailed, reserveOptimizationAccess } from "@/lib/ai-access-control";
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
@@ -68,6 +69,7 @@ async function callDeepSeek(messages: Array<{ role: "system" | "user"; content: 
 }
 
 export async function POST(req: NextRequest) {
+  let usageEventId: string | null = null;
   try {
     const auth = await requireAuthenticatedUser(req);
     if ("response" in auth) return auth.response;
@@ -105,6 +107,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "DeepSeek API Key 未配置" }, { status: 500 });
     }
 
+    const access = await reserveOptimizationAccess(auth.user.id, "optimize_module");
+    if (!access.allowed) return access.response;
+    usageEventId = access.eventId;
+
     const moduleMarkdown = renderStructuredResumeV1Markdown(structuredResume);
     const userMessage = `优化模块：${MODULE_LABELS[moduleName]}（${moduleName}）
 优化强度：${strength}
@@ -124,6 +130,8 @@ ${moduleMarkdown}`;
     ], routing.model));
 
     if (!parsed) {
+      await markAiUsageFailed(usageEventId);
+      usageEventId = null;
       return NextResponse.json({ error: "AI 返回格式无法解析，请稍后重试" }, { status: 502 });
     }
 
@@ -134,6 +142,7 @@ ${moduleMarkdown}`;
       targetRole,
     });
 
+    await markAiUsageCompleted(usageEventId);
     return NextResponse.json({
       module: moduleName,
       optimizedModule: parsed.optimizedModule || moduleData,
@@ -146,6 +155,7 @@ ${moduleMarkdown}`;
       routingReason: routing.reason,
     });
   } catch (error: unknown) {
+    await markAiUsageFailed(usageEventId);
     return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
   }
 }

@@ -27,13 +27,9 @@ function getBearerToken(req: NextRequest) {
   return match?.[1]?.trim() || "";
 }
 
-export async function requireAuthenticatedUser(req: NextRequest): Promise<{ user: User } | { response: NextResponse }> {
+export async function getOptionalAuthenticatedUser(req: NextRequest): Promise<{ user: User | null } | { response: NextResponse }> {
   const token = getBearerToken(req);
-  if (!token) {
-    return {
-      response: NextResponse.json({ error: AI_AUTH_REQUIRED_MESSAGE }, { status: 401 }),
-    };
-  }
+  if (!token) return { user: null };
 
   try {
     const { data, error } = await getAuthClient().auth.getUser(token);
@@ -51,3 +47,13 @@ export async function requireAuthenticatedUser(req: NextRequest): Promise<{ user
   }
 }
 
+export async function requireAuthenticatedUser(req: NextRequest): Promise<{ user: User } | { response: NextResponse }> {
+  const auth = await getOptionalAuthenticatedUser(req);
+  if ("response" in auth) return auth;
+  if (!auth.user) {
+    return {
+      response: NextResponse.json({ error: AI_AUTH_REQUIRED_MESSAGE }, { status: 401 }),
+    };
+  }
+  return { user: auth.user };
+}

@@ -25,6 +25,8 @@ import {
   Lock,
   ShieldCheck,
   RefreshCw,
+  Crown,
+  QrCode,
 } from "lucide-react";
 import { LoginParticles } from "@/components/login-particles";
 import { Button } from "@/components/ui/button";
@@ -62,7 +64,9 @@ import {
 import { supabase } from "@/lib/supabase";
 
 const STORAGE_KEY = "resume_demo";
-const DEMO_AI_LIMIT_MESSAGE = "Demo 模式可体验编辑、导入和导出，AI 诊断优化需登录后使用。";
+const DEMO_CLIENT_ID_KEY = "resume_demo_client_id";
+const DEMO_AI_LIMIT_MESSAGE = "Demo 模式支持免费诊断；优化需登录并使用免费次数或开通 VIP。";
+const VIP_REQUIRED_MESSAGE = "免费优化次数已用完，请开通 VIP 后继续使用优化功能。";
 
 type Version = "original" | "optimized";
 type EditorMode = "structured" | "markdown";
@@ -70,6 +74,12 @@ type WorkflowMode = "fast" | "professional";
 type UserType = "auto" | "fresh_graduate" | "junior" | "career_switcher" | "senior";
 type Strength = "conservative" | "professional" | "strong";
 type CloudSaveStatus = "idle" | "saving" | "saved" | "failed";
+type EntitlementState = {
+  isVip: boolean;
+  vipExpiresAt: string | null;
+  freeOptimizationUsed: boolean;
+  remainingFreeOptimizations: number;
+};
 
 type ResumeState = {
   title: string;
@@ -181,6 +191,15 @@ function saveResume(data: ResumeState) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
+function getDemoClientId() {
+  if (typeof window === "undefined") return "";
+  const existing = localStorage.getItem(DEMO_CLIENT_ID_KEY);
+  if (existing) return existing;
+  const next = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  localStorage.setItem(DEMO_CLIENT_ID_KEY, next);
+  return next;
+}
+
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "未知错误";
 }
@@ -288,6 +307,9 @@ export default function Page() {
   const [resumeListError, setResumeListError] = useState("");
   const [currentResumeId, setCurrentResumeId] = useState<string | null>(null);
   const [cloudSaveStatus, setCloudSaveStatus] = useState<CloudSaveStatus>("idle");
+  const [entitlement, setEntitlement] = useState<EntitlementState | null>(null);
+  const [entitlementLoading, setEntitlementLoading] = useState(false);
+  const [vipDialogOpen, setVipDialogOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -322,6 +344,12 @@ export default function Page() {
     const frame = window.requestAnimationFrame(() => setCaptchaChallenge(createCaptchaChallenge()));
     return () => window.cancelAnimationFrame(frame);
   }, []);
+
+  useEffect(() => {
+    if (user && !demo) void refreshEntitlement();
+    // refreshEntitlement reads current auth session; user/demo are the intended triggers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, demo]);
 
   function updateResume(next: ResumeState | ((current: ResumeState) => ResumeState)) {
     setCloudSaveStatus("idle");
@@ -429,21 +457,10 @@ export default function Page() {
   function enterDemo() {
     setDemo(true);
     setUser({ id: "demo", email: "demo" });
+    setEntitlement(null);
     setCurrentResumeId(null);
     setCloudSaveStatus("idle");
     setResume(loadResume());
-  }
-
-  function ensureAiAccess() {
-    if (demo) {
-      setError(DEMO_AI_LIMIT_MESSAGE);
-      return false;
-    }
-    if (!user) {
-      setError("请先登录后再使用 AI 诊断优化功能。");
-      return false;
-    }
-    return true;
   }
 
   async function getAuthHeaders() {
@@ -456,26 +473,90 @@ export default function Page() {
     };
   }
 
+  function getDemoHeaders() {
+    return {
+      "Content-Type": "application/json",
+      "X-Demo-Client-Id": getDemoClientId(),
+    };
+  }
+
+  async function refreshEntitlement() {
+    if (!user || demo) {
+      setEntitlement(null);
+      return null;
+    }
+    setEntitlementLoading(true);
+    try {
+      const response = await fetch("/api/entitlement", {
+        method: "GET",
+        headers: await getAuthHeaders(),
+      });
+      const data = await response.json();
+      if (!response.ok || data.error) throw new Error(data.error || "权益状态加载失败");
+      setEntitlement(data);
+      return data as EntitlementState;
+    } catch (exception) {
+      setError(getErrorMessage(exception));
+      return null;
+    } finally {
+      setEntitlementLoading(false);
+    }
+  }
+
+  function ensureDiagnosisAccess() {
+    if (demo) return true;
+    if (!user) {
+      setError("请先登录后再使用 AI 诊断功能。");
+      return false;
+    }
+    return true;
+  }
+
+  function ensureOptimizationAccess() {
+    if (demo) {
+      setError(DEMO_AI_LIMIT_MESSAGE);
+      setVipDialogOpen(true);
+      return false;
+    }
+    if (!user) {
+      setError("请先登录后再使用 AI 优化功能。");
+      setVipDialogOpen(true);
+      return false;
+    }
+    if (entitlement && !entitlement.isVip && entitlement.remainingFreeOptimizations <= 0) {
+      setError(VIP_REQUIRED_MESSAGE);
+      setVipDialogOpen(true);
+      return false;
+    }
+    return true;
+  }
+
+  function handleVipRequired(message = VIP_REQUIRED_MESSAGE) {
+    setError(message);
+    setVipDialogOpen(true);
+  }
+
   async function handleLogout() {
     if (!demo) await supabase.auth.signOut();
     setDemo(false);
     setUser(null);
     setCurrentResumeId(null);
     setCloudSaveStatus("idle");
+    setEntitlement(null);
     setResumeListOpen(false);
     setResumeList([]);
   }
 
   async function requestDiagnosis() {
     if (!hasOriginal) return null;
-    if (!ensureAiAccess()) return null;
+    if (!ensureDiagnosisAccess()) return null;
     setBusy("diagnose");
     setError("");
 
     try {
       const response = await fetch("/api/diagnose", {
         method: "POST",
-        headers: await getAuthHeaders(),
+        headers: demo ? getDemoHeaders() : await getAuthHeaders(),
         body: JSON.stringify({
           markdown: resume.original_content,
           structuredResume: resume.structuredResume,
@@ -500,7 +581,7 @@ export default function Page() {
 
   async function requestOptimization(inputDiagnosis?: Diagnosis | null) {
     if (!hasOriginal) return;
-    if (!ensureAiAccess()) return;
+    if (!ensureOptimizationAccess()) return;
     setBusy("optimize");
     setError("");
 
@@ -519,6 +600,10 @@ export default function Page() {
         }),
       });
       const data = await response.json();
+      if (data.code === "VIP_REQUIRED") {
+        handleVipRequired(data.error || VIP_REQUIRED_MESSAGE);
+        return;
+      }
       if (!response.ok || data.error) throw new Error(data.error || "优化失败");
       const result = data.optimization as Optimization;
       const optimizedMarkdown = normalizeResumeMarkdown(result.optimizedMarkdown || data.optimized || "");
@@ -529,6 +614,7 @@ export default function Page() {
       updateResume({ ...resume, optimized_content: optimizedMarkdown, optimizedStructuredResume });
       setVersion("optimized");
       saveRecord("optimize", resume.position || "简历优化", result.editSummary?.slice(0, 2).join("；") || "优化完成", data.modelTier || "");
+      void refreshEntitlement();
     } catch (exception) {
       setError(getErrorMessage(exception));
     } finally {
@@ -537,7 +623,7 @@ export default function Page() {
   }
 
   async function runFullFlow() {
-    if (!ensureAiAccess()) return;
+    if (!ensureOptimizationAccess()) return;
     setBusy("flow");
     setError("");
     const nextDiagnosis = await requestDiagnosis();
@@ -597,7 +683,7 @@ export default function Page() {
   }
 
   async function handleOptimizeModule(moduleName: string) {
-    if (!ensureAiAccess()) return;
+    if (!ensureOptimizationAccess()) return;
     setOptimizingModule(moduleName);
     setError("");
     try {
@@ -614,11 +700,16 @@ export default function Page() {
         }),
       });
       const data = await response.json();
+      if (data.code === "VIP_REQUIRED") {
+        handleVipRequired(data.error || VIP_REQUIRED_MESSAGE);
+        return;
+      }
       if (!response.ok || data.error) throw new Error(data.error || "模块优化失败");
       const nextStructured = { ...resume.structuredResume, [moduleName]: data.optimizedModule };
       const markdown = renderStructuredResumeV1Markdown(nextStructured);
       updateResume({ ...resume, structuredResume: nextStructured, original_content: normalizeResumeMarkdown(markdown) });
       setOptimization((prev) => prev ? { ...prev, editSummary: [...(data.optimization?.editSummary || []), ...(prev.editSummary || [])] } : null);
+      void refreshEntitlement();
     } catch (exception) {
       setError(getErrorMessage(exception));
     } finally {
@@ -764,6 +855,27 @@ export default function Page() {
     } catch {
       return value;
     }
+  }
+
+  function formatVipTime(value: string | null) {
+    if (!value) return "";
+    try {
+      return new Intl.DateTimeFormat("zh-CN", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date(value));
+    } catch {
+      return value;
+    }
+  }
+
+  function entitlementText() {
+    if (demo) return "Demo：可免费诊断，优化需登录";
+    if (entitlementLoading) return "权益加载中";
+    if (!entitlement) return "登录后查看优化权益";
+    if (entitlement.isVip) return `VIP 有效期至 ${formatVipTime(entitlement.vipExpiresAt)}`;
+    return entitlement.remainingFreeOptimizations > 0 ? "免费优化剩余 1 次" : "免费优化已用完";
   }
 
   function getTemplateName(templateId: string | null) {
@@ -987,17 +1099,32 @@ export default function Page() {
             </section>
           )}
 
+          <section className="rounded-lg border border-blue-100 bg-blue-50/70 p-3 text-xs text-blue-900">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="flex items-center gap-1 font-semibold">
+                  <Crown className="h-3.5 w-3.5" />
+                  优化权益
+                </p>
+                <p className="mt-1 text-blue-800">{entitlementText()}</p>
+              </div>
+              <Button className="h-7 shrink-0 px-2 text-[11px]" size="sm" type="button" onClick={() => setVipDialogOpen(true)}>
+                开通 VIP
+              </Button>
+            </div>
+          </section>
+
           <section className="space-y-2">
-            <Button className="w-full justify-start" disabled={demo || !hasOriginal || busy === "flow"} onClick={runFullFlow}>
+            <Button className="w-full justify-start" disabled={!hasOriginal || busy === "flow"} onClick={runFullFlow}>
               {busy === "flow" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
               诊断并优化
             </Button>
             <div className="grid grid-cols-2 gap-2">
-              <Button variant="outline" size="sm" disabled={demo || !hasOriginal || busy === "diagnose"} onClick={requestDiagnosis}>
+              <Button variant="outline" size="sm" disabled={!hasOriginal || busy === "diagnose"} onClick={requestDiagnosis}>
                 {busy === "diagnose" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Stethoscope className="mr-1 h-3 w-3" />}
                 只诊断
               </Button>
-              <Button variant="outline" size="sm" disabled={demo || !hasOriginal || busy === "optimize"} onClick={() => requestOptimization()}>
+              <Button variant="outline" size="sm" disabled={!hasOriginal || busy === "optimize"} onClick={() => requestOptimization()}>
                 {busy === "optimize" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Target className="mr-1 h-3 w-3" />}
                 只优化
               </Button>
@@ -1241,6 +1368,47 @@ export default function Page() {
           <a href="https://beian.mps.gov.cn/#/query/webSearch?code=31011502405714" target="_blank" rel="noopener noreferrer" className="hover:text-slate-700">沪公网安备31011502405714号</a>
         </footer>
       </main>
+
+      <Dialog open={vipDialogOpen} onOpenChange={setVipDialogOpen}>
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-md p-5 sm:p-6">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Crown className="h-5 w-5 text-blue-600" />
+              开通 VIP
+            </DialogTitle>
+            <DialogDescription>
+              免费优化次数用完后，开通 VIP 可继续使用整篇优化、诊断并优化和模块 AI 优化。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid gap-2 rounded-lg border bg-slate-50 p-3 text-xs text-slate-700">
+              <div className="flex items-center justify-between">
+                <span>整篇简历优化</span>
+                <span className="font-semibold text-blue-700">不限次</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>模块级 AI 优化</span>
+                <span className="font-semibold text-blue-700">不限次</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>JD 匹配优化</span>
+                <span className="font-semibold text-blue-700">支持</span>
+              </div>
+            </div>
+            <div className="flex flex-col items-center rounded-lg border border-dashed border-blue-200 bg-blue-50/60 p-5 text-center">
+              <div className="flex h-32 w-32 items-center justify-center rounded-lg border bg-white text-blue-600">
+                <QrCode className="h-14 w-14" />
+              </div>
+              <p className="mt-3 text-sm font-semibold text-slate-900">二维码位</p>
+              <p className="mt-1 text-xs text-slate-600">后续可替换为微信、企微或收款二维码。</p>
+              <p className="mt-2 text-xs text-blue-700">扫码/联系管理员开通 VIP</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button size="sm" variant="outline" onClick={() => setVipDialogOpen(false)}>稍后再说</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={compareOpen} onOpenChange={setCompareOpen}>
         <DialogContent className="max-h-[92svh] w-[calc(100vw-1rem)] max-w-6xl overflow-auto p-4 sm:p-6">

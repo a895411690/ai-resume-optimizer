@@ -7,7 +7,8 @@ import {
 } from "@/lib/ai-resume-contract.js";
 import { chooseDeepSeekModel } from "@/lib/deepseek-model-router.js";
 import { normalizeStructuredResumeV1, renderStructuredResumeV1Markdown } from "@/lib/resume-schema.js";
-import { requireAuthenticatedUser } from "@/lib/api-auth";
+import { getOptionalAuthenticatedUser } from "@/lib/api-auth";
+import { reserveDemoDiagnosisAccess } from "@/lib/ai-access-control";
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
@@ -118,8 +119,12 @@ function diagnosisToMarkdown(diagnosis: StructuredDiagnosis) {
 
 export async function POST(req: NextRequest) {
   try {
-    const auth = await requireAuthenticatedUser(req);
+    const auth = await getOptionalAuthenticatedUser(req);
     if ("response" in auth) return auth.response;
+    if (!auth.user) {
+      const demoAccess = await reserveDemoDiagnosisAccess(req);
+      if (!demoAccess.allowed) return demoAccess.response;
+    }
 
     const body = await req.json();
     const structuredResume = body.structuredResume ? normalizeStructuredResumeV1(body.structuredResume) : null;
