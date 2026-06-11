@@ -4,7 +4,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export const DEMO_DAILY_DIAGNOSIS_LIMIT = 3;
 
-const VIP_REQUIRED_MESSAGE = "免费优化次数已用完，请开通 VIP 后继续使用优化功能。";
+const VIP_REQUIRED_MESSAGE = "体验次数已满，请及时充值！";
 const DEMO_DIAGNOSIS_LIMIT_MESSAGE = "Demo 今日免费诊断次数已用完，请登录后继续使用。";
 const DEMO_CLIENT_REQUIRED_MESSAGE = "Demo 诊断需要有效的浏览器体验标识。";
 

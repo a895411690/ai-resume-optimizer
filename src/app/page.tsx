@@ -66,7 +66,7 @@ import { supabase } from "@/lib/supabase";
 const STORAGE_KEY = "resume_demo";
 const DEMO_CLIENT_ID_KEY = "resume_demo_client_id";
 const DEMO_AI_LIMIT_MESSAGE = "Demo 模式支持免费诊断；优化需登录并使用免费次数或开通 VIP。";
-const VIP_REQUIRED_MESSAGE = "免费优化次数已用完，请开通 VIP 后继续使用优化功能。";
+const VIP_REQUIRED_MESSAGE = "体验次数已满，请及时充值！";
 
 type Version = "original" | "optimized";
 type EditorMode = "structured" | "markdown";
