@@ -37,7 +37,7 @@ test("preview classes expose two-column template without forcing mobile two-colu
 });
 
 test("print CSS is template-specific", () => {
-  assert.match(getTemplatePrintCss("classic"), /border-bottom:2px solid #111827/);
+  assert.match(getTemplatePrintCss("classic"), /border-bottom:2px solid #2563eb/);
   assert.match(getTemplatePrintCss("modern"), /grid-template-columns:210px 1fr/);
   assert.match(getTemplatePrintCss("executive"), /#1d4ed8/);
 });

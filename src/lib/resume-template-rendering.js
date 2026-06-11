@@ -114,6 +114,39 @@ function getPreviewTemplateClasses(templateId) {
       accent,
     };
   }
+  if (layout === "timeline") {
+    return {
+      page: basePage,
+      header: "mb-6 border-b-2 pb-4 text-center",
+      body: "",
+      main: "",
+      sidebar: "",
+      sectionTitle: "mb-3 mt-5 break-words pb-1 text-base font-bold text-gray-800 sm:mt-6 sm:text-lg",
+      accent,
+    };
+  }
+  if (layout === "infographic") {
+    return {
+      page: basePage,
+      header: "mb-0 pb-6 text-center text-white",
+      body: "",
+      main: "mt-6",
+      sidebar: "",
+      sectionTitle: "mb-3 mt-5 break-words border-b pb-1 text-base font-bold text-gray-800 sm:mt-6 sm:text-lg",
+      accent,
+    };
+  }
+  if (layout === "sidebar-right") {
+    return {
+      page: `${basePage} md:p-0`,
+      header: "border-b border-slate-200 p-6 text-left md:border-b-0 md:text-white",
+      body: "md:grid md:grid-cols-[minmax(0,1fr)_210px]",
+      main: "min-w-0 p-4 sm:p-8 md:p-10",
+      sidebar: "border-b bg-slate-50 p-4 text-xs sm:p-6 md:border-b-0 md:text-slate-100",
+      sectionTitle: "mb-3 mt-5 break-words border-b border-gray-300 pb-1 text-base font-bold text-gray-800 sm:mt-6 sm:text-lg",
+      accent,
+    };
+  }
   return {
     page: basePage,
     header: "mb-6 border-b-2 pb-4 text-center",
@@ -133,8 +166,17 @@ function getTemplatePrintCss(templateId) {
   if (layout === "two-column") {
     return `${base}.resume-body{display:grid;grid-template-columns:210px 1fr;gap:28px}.sidebar{background:${accent};color:#f8fafc;padding:24px}.main{padding:24px 0}.contact{color:#cbd5e1}h2{border-bottom:1px solid #d1d5db}.skills{margin-top:18px}`;
   }
-  if (layout === "single-accent") {
-    return `${base}header{border-left:5px solid ${accent};padding-left:14px;border-bottom:0}h2{border-bottom:2px solid ${accent}33;color:${accent};text-transform:uppercase}`;
+ if (layout === "single-accent") {
+   return `${base}header{border-left:5px solid ${accent};padding-left:14px;border-bottom:0}h2{border-bottom:2px solid ${accent}33;color:${accent};text-transform:uppercase}`;
+ }
+  if (layout === "timeline") {
+    return `${base}header{text-align:center;border-bottom:2px solid ${accent};padding-bottom:12px}h2{border-bottom:1px solid ${accent}44}.timeline-item{position:relative;padding-left:24px;margin-bottom:16px;border-left:3px solid ${accent}}.timeline-item::before{content:'';position:absolute;left:-7px;top:4px;width:10px;height:10px;border-radius:50%;background:${accent}}`;
+  }
+  if (layout === "infographic") {
+    return `${base}.infographic-banner{background:${accent};color:#f8fafc;padding:24px;text-align:center;margin:-20px -20px 20px}h1{color:#fff}.infographic-banner .contact{color:#cbd5e1}.skill-bar-wrap{margin-bottom:8px}.skill-bar-track{background:#e5e7eb;border-radius:4px;height:8px;overflow:hidden}.skill-bar-fill{background:${accent};border-radius:4px;height:8px}h2{border-bottom:1px solid ${accent}44}`;
+  }
+  if (layout === "sidebar-right") {
+    return `${base}.resume-body{display:grid;grid-template-columns:1fr 210px;gap:28px}.sidebar{background:${accent};color:#f8fafc;padding:24px;order:2}.main{padding:24px 0;order:1}.contact{color:#cbd5e1}h2{border-bottom:1px solid #d1d5db}.skills{margin-top:18px}`;
   }
   return `${base}header{text-align:center;border-bottom:2px solid ${accent};padding-bottom:12px}h2{border-bottom:1px solid ${accent}44}`;
 }
@@ -157,10 +199,28 @@ function renderTemplateExportHtml({ title, structuredResume, templateId }) {
   const contact = view.contactItems.length ? `<div class="contact">${view.contactItems.map(escapeHtml).join(" · ")}</div>` : "";
   const skills = view.skills.length ? `<div class="skills"><h2>专业技能</h2><ul>${view.skills.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : "";
   const nonSkillSections = view.sections.filter((section) => section.title !== "专业技能");
-  const sections = nonSkillSections.map(renderSectionHtml).join("");
-  const body = layout === "two-column"
-    ? `<div class="resume-body"><aside class="sidebar"><header><h1>${escapeHtml(view.title)}</h1>${contact}</header>${skills}</aside><main class="main">${sections}</main></div>`
-    : `<header><h1>${escapeHtml(view.title)}</h1>${contact}</header><main>${view.sections.map(renderSectionHtml).join("")}</main>`;
+ const sections = nonSkillSections.map(renderSectionHtml).join("");
+  let body;
+  if (layout === "two-column") {
+    body = `<div class="resume-body"><aside class="sidebar"><header><h1>${escapeHtml(view.title)}</h1>${contact}</header>${skills}</aside><main class="main">${sections}</main></div>`;
+  } else if (layout === "sidebar-right") {
+    body = `<div class="resume-body"><main class="main">${sections}</main><aside class="sidebar"><header><h1>${escapeHtml(view.title)}</h1>${contact}</header>${skills}</aside></div>`;
+  } else if (layout === "timeline") {
+    const timelineSections = view.sections.map((section) => {
+      const items = section.items.map((item) => {
+        const heading = item.heading ? `<h3>${escapeHtml(item.heading)}</h3>` : "";
+        const bullets = item.bullets.length ? `<ul>${item.bullets.map((bullet) => `<li>${escapeHtml(bullet)}</li>`).join("")}</ul>` : "";
+        return `<div class="timeline-item">${heading}${bullets}</div>`;
+      }).join("");
+      return `<section class="section"><h2>${escapeHtml(section.title)}</h2>${items}</section>`;
+    }).join("");
+    body = `<header><h1>${escapeHtml(view.title)}</h1>${contact}</header><main>${timelineSections}</main>`;
+  } else if (layout === "infographic") {
+    const skillBars = view.skills.map((skill) => `<div class="skill-bar-wrap"><span>${escapeHtml(skill)}</span><div class="skill-bar-track"><div class="skill-bar-fill" style="width:75%"></div></div></div>`).join("");
+    body = `<div class="infographic-banner"><header><h1>${escapeHtml(view.title)}</h1>${contact}</header>${skillBars}</div><main>${view.sections.map(renderSectionHtml).join("")}</main>`;
+  } else {
+    body = `<header><h1>${escapeHtml(view.title)}</h1>${contact}</header><main>${view.sections.map(renderSectionHtml).join("")}</main>`;
+  }
 
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(documentTitle)}</title><style>${getTemplatePrintCss(id)}</style></head><body data-template="${id}">${body}</body></html>`;
 }

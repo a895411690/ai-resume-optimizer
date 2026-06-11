@@ -38,7 +38,7 @@ test("each template has center metadata for previews audience and strengths", ()
     assert.ok(template.audience.length >= 1);
     assert.ok(template.strengths.length >= 2);
     assert.ok(template.preview);
-    assert.ok(["single", "two-column", "single-accent"].includes(template.preview.layout));
+    assert.ok(["single", "two-column", "single-accent", "timeline", "infographic", "sidebar-right"].includes(template.preview.layout));
     assert.ok(template.preview.accent);
   }
 });
