@@ -744,7 +744,7 @@ export default function Page() {
     return (
       <div className="login-page">
         <LoginParticles />
-        <div className="login-card">
+        <div className="login-card" style={{ backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" }}>
           <div className="text-center mb-6">
             <div className="login-icon-wrap mb-3">
               <Sparkles className="h-6 w-6" style={{ color: "#7B61FF" }} />
