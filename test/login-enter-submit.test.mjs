@@ -12,6 +12,20 @@ test("login form submits with Enter without triggering secondary actions", () =>
   assert.match(source, /<button className="login-btn-demo" type="button" onClick=\{enterDemo\}>/);
 });
 
+test("login form requires captcha before Supabase auth calls", () => {
+  const source = readFileSync(new URL("../src/app/page.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /function createCaptchaChallenge\(\)/);
+  assert.match(source, /const \[captchaChallenge, setCaptchaChallenge\]/);
+  assert.match(source, /const \[captchaValue, setCaptchaValue\]/);
+  assert.match(source, /placeholder="验证码"/);
+  assert.match(source, /aria-label="刷新验证码"/);
+  assert.match(source, /请输入验证码。/);
+  assert.match(source, /验证码错误，请重新输入。/);
+  assert.ok(source.indexOf("if (!captchaValue.trim())") < source.indexOf("supabase.auth.signUp"));
+  assert.ok(source.indexOf("if (captchaValue.trim() !== captchaChallenge.answer)") < source.indexOf("supabase.auth.signInWithPassword"));
+});
+
 test("registration explains email verification before login", () => {
   const source = readFileSync(new URL("../src/app/page.tsx", import.meta.url), "utf8");
 

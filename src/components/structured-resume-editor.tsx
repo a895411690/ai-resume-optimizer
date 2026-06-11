@@ -154,10 +154,10 @@ export function StructuredResumeEditor({ structuredResume, userType, onChange, o
 
   const resume = normalizeStructuredResumeV1(structuredResume);
 
-  function commit(next: Record<string, unknown>) {
+  const commit = useCallback((next: Record<string, unknown>) => {
     latestDraftRef.current = next;
     onChange(next);
-  }
+  }, [onChange]);
 
   function updateItem(section: ArraySection, index: number, patch: Record<string, unknown>) {
     commit(updateArrayItem(latestDraftRef.current, section, index, patch));
@@ -183,26 +183,28 @@ export function StructuredResumeEditor({ structuredResume, userType, onChange, o
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
   );
 
-  const sectionOrder: string[] = getSectionOrder(latestDraftRef.current);
+  const sectionOrder: string[] = getSectionOrder(resume);
 
-  const handleSectionDragEnd = useCallback((event: DragEndEvent) => {
+  function handleSectionDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const oldIndex = sectionOrder.indexOf(String(active.id));
     const newIndex = sectionOrder.indexOf(String(over.id));
     if (oldIndex === -1 || newIndex === -1) return;
     commit(reorderSections(latestDraftRef.current, oldIndex, newIndex));
-  }, [sectionOrder]);
+  }
 
-  const makeItemDragEndHandler = useCallback((section: ArraySection, items: unknown[]) => (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const ids = items.map((_, i) => `${section}-${i}`);
-    const oldIndex = ids.indexOf(String(active.id));
-    const newIndex = ids.indexOf(String(over.id));
-    if (oldIndex === -1 || newIndex === -1) return;
-    commit(reorderArrayItems(latestDraftRef.current, section, oldIndex, newIndex));
-  }, []);
+  function makeItemDragEndHandler(section: ArraySection, items: unknown[]) {
+    return (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const ids = items.map((_, i) => `${section}-${i}`);
+      const oldIndex = ids.indexOf(String(active.id));
+      const newIndex = ids.indexOf(String(over.id));
+      if (oldIndex === -1 || newIndex === -1) return;
+      commit(reorderArrayItems(latestDraftRef.current, section, oldIndex, newIndex));
+    };
+  }
 
   // Render a section block for a given sectionId, receiving dragHandleProps from SortableSection
   const renderSection = (sectionId: string, dragHandleProps: Record<string, unknown>) => {

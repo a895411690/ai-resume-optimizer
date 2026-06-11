@@ -23,6 +23,8 @@ import {
   Wand2,
   Mail,
   Lock,
+  ShieldCheck,
+  RefreshCw,
 } from "lucide-react";
 import { LoginParticles } from "@/components/login-particles";
 import { Button } from "@/components/ui/button";
@@ -79,6 +81,7 @@ type ResumeState = {
 };
 
 type User = { id: string; email: string };
+type CaptchaChallenge = { question: string; answer: string };
 type ResumeListItem = {
   id: string;
   title: string | null;
@@ -196,6 +199,16 @@ function getAuthErrorMessage(error: unknown) {
   return message;
 }
 
+function createCaptchaChallenge(): CaptchaChallenge {
+  const left = Math.floor(Math.random() * 8) + 2;
+  const right = Math.floor(Math.random() * 8) + 2;
+  const useAddition = Math.random() > 0.5;
+  if (useAddition) return { question: `${left} + ${right}`, answer: String(left + right) };
+  const larger = Math.max(left, right);
+  const smaller = Math.min(left, right);
+  return { question: `${larger} - ${smaller}`, answer: String(larger - smaller) };
+}
+
 function formatImportedText(text: string) {
   return normalizeResumeMarkdown(text);
 }
@@ -279,6 +292,8 @@ export default function Page() {
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
+  const [captchaChallenge, setCaptchaChallenge] = useState<CaptchaChallenge>({ question: "8 + 5", answer: "13" });
+  const [captchaValue, setCaptchaValue] = useState("");
 
   const hasOriginal = Boolean(resume.original_content.trim());
   const hasOptimized = Boolean(resume.optimized_content.trim());
@@ -300,6 +315,11 @@ export default function Page() {
     return () => {
       mounted = false;
     };
+  }, []);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => setCaptchaChallenge(createCaptchaChallenge()));
+    return () => window.cancelAnimationFrame(frame);
   }, []);
 
   function updateResume(next: ResumeState | ((current: ResumeState) => ResumeState)) {
@@ -366,6 +386,17 @@ export default function Page() {
 
   async function signIn() {
     setAuthError("");
+    if (!captchaValue.trim()) {
+      setAuthError("请输入验证码。");
+      return;
+    }
+    if (captchaValue.trim() !== captchaChallenge.answer) {
+      setAuthError("验证码错误，请重新输入。");
+      setCaptchaValue("");
+      setCaptchaChallenge(createCaptchaChallenge());
+      return;
+    }
+
     setAuthLoading(true);
     try {
       if (authMode === "register") {
@@ -388,6 +419,8 @@ export default function Page() {
     } catch (exception) {
       setAuthError(getAuthErrorMessage(exception));
     } finally {
+      setCaptchaValue("");
+      setCaptchaChallenge(createCaptchaChallenge());
       setAuthLoading(false);
     }
   }
@@ -789,6 +822,33 @@ export default function Page() {
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
               />
+            </div>
+            <div className="login-captcha-row">
+              <div className="login-input-wrapper">
+                <ShieldCheck className="login-input-icon" />
+                <input
+                  className="login-input"
+                  placeholder="验证码"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={captchaValue}
+                  onChange={(event) => setCaptchaValue(event.target.value.replace(/[^\d-]/g, ""))}
+                />
+              </div>
+              <div className="login-captcha-box" aria-label={`验证码题目 ${captchaChallenge.question}`}>
+                <span>{captchaChallenge.question}</span>
+                <button
+                  type="button"
+                  className="login-captcha-refresh"
+                  aria-label="刷新验证码"
+                  onClick={() => {
+                    setCaptchaValue("");
+                    setCaptchaChallenge(createCaptchaChallenge());
+                  }}
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
             {authError && <p className={`login-error ${authError.includes("成功") ? "text-green-400" : "text-red-400"}`}>{authError}</p>}
             <button className="login-btn-primary" type="submit" disabled={authLoading}>
