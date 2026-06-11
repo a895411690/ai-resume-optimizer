@@ -329,6 +329,14 @@ export default function Page() {
     ? (resume.optimizedStructuredResume || (resume.optimized_content ? migrateMarkdownToStructuredResumeV1(resume.optimized_content) : resume.structuredResume))
     : resume.structuredResume;
 
+  // Unregister stale service workers (e.g. from previous PWA setup)
+  useEffect(() => {
+    if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+      navigator.serviceWorker.getRegistrations().then((regs) => {
+        for (const reg of regs) reg.unregister();
+      });
+    }
+  }, []);
   useEffect(() => {
     let mounted = true;
     supabase.auth.getSession().then(({ data }) => {
