@@ -11,30 +11,69 @@ function getSecret() {
   return process.env.XDDPAY_SECRET || "";
 }
 
-// MD5 signature: join key=value pairs with &, append secret, then MD5 uppercase
-function sign(params: Record<string, string | number>): string {
-  const str = Object.entries(params)
-    .filter(([, v]) => v !== undefined && v !== null && v !== "")
-    .sort(([a], [b]) => a.localeCompare(b))
+// Build sign string: order params in documented order, then append secret
+function buildSignString(params: [string, string | number][]): string {
+  return params
+    .filter(([, v]) => v !== undefined && v !== null)
     .map(([k, v]) => `${k}=${v}`)
     .join("&") + getSecret();
+}
+
+function md5Sign(str: string): string {
   return createHash("md5").update(str, "utf-8").digest("hex").toUpperCase();
+}
+
+// Payment sign: MD5(order_no=xxx&subject=xxx&pay_type=xxx&money=xxx&app_id=xxx&extra=xxx&secret)
+function signPayment(params: {
+  order_no: string;
+  subject: string;
+  pay_type: number;
+  money: string;
+  app_id: string;
+  extra?: string;
+}): string {
+  const ordered: [string, string | number][] = [
+    ["order_no", params.order_no],
+    ["subject", params.subject],
+    ["pay_type", params.pay_type],
+    ["money", params.money],
+    ["app_id", params.app_id],
+  ];
+  if (params.extra) ordered.push(["extra", params.extra]);
+  return md5Sign(buildSignString(ordered));
+}
+
+// Notify sign: MD5(order_no=xxx&subject=xxx&pay_type=xxx&money=xxx&realmoney=xxx&result=xxx&xddpay_order=xxx&app_id=xxx&extra=xxx&secret)
+function signNotify(params: Record<string, string>): string {
+  const ordered: [string, string | number][] = [
+    ["order_no", params.order_no || ""],
+    ["subject", params.subject || ""],
+    ["pay_type", params.pay_type || ""],
+    ["money", params.money || ""],
+    ["realmoney", params.realmoney || ""],
+    ["result", params.result || ""],
+    ["xddpay_order", params.xddpay_order || ""],
+    ["app_id", params.app_id || ""],
+  ];
+  if (params.extra) ordered.push(["extra", params.extra]);
+  return md5Sign(buildSignString(ordered));
+}
+
+// Query sign: MD5(app_id=xxx&order_no=xxx&secret)
+function signQuery(params: { app_id: string; order_no: string }): string {
+  const ordered: [string, string | number][] = [
+    ["app_id", params.app_id],
+    ["order_no", params.order_no],
+  ];
+  return md5Sign(buildSignString(ordered));
 }
 
 export type PayType = 43 | 44; // 43=alipay, 44=wechat
 
-export interface CreatePaymentParams {
-  orderNo: string;
-  subject: string;
-  payType: PayType;
-  money: number;
-  extra?: string;
-}
-
 export interface CreatePaymentResult {
   payUrl: string;
-  qrCode?: string;
   qrImg?: string;
+  qrCode?: string;
   xddpayOrder?: string;
   realMoney?: string;
 }
@@ -60,23 +99,24 @@ export async function createPaymentOrder(params: {
   });
   if (dbError) throw new Error(dbError.message || "订单创建失败");
 
-  // Build xddpay request
-  const signParams: Record<string, string | number> = {
+  const appId = getAppId();
+  const signParams = {
     order_no: orderNo,
     subject,
     pay_type: payType,
     money: money.toFixed(2),
-    app_id: getAppId(),
+    app_id: appId,
   };
-  if (params.subject) signParams.subject = subject;
 
-  const paySign = sign(signParams);
+  const paySign = signPayment(signParams);
 
   // Use JSON format to get QR code directly
   const formData = new URLSearchParams();
-  for (const [k, v] of Object.entries(signParams)) {
-    formData.append(k, String(v));
-  }
+  formData.append("order_no", signParams.order_no);
+  formData.append("subject", signParams.subject);
+  formData.append("pay_type", String(signParams.pay_type));
+  formData.append("money", signParams.money);
+  formData.append("app_id", signParams.app_id);
   formData.append("sign", paySign);
 
   const response = await fetch(`${XDDPAY_GATEWAY}?format=json`, {
@@ -93,41 +133,26 @@ export async function createPaymentOrder(params: {
     throw new Error("支付接口返回格式异常");
   }
 
-  if (data.qr || data.qr_img) {
-    return {
-      payUrl: `${XDDPAY_GATEWAY}?format=json`,
-      qrCode: data.qr || "",
-      qrImg: data.qr_img || "",
-      xddpayOrder: data.xddpay_order || "",
-      realMoney: data.realmoney || String(money),
-    } satisfies CreatePaymentResult;
-  }
-
-  // Fallback: use redirect URL for form submission
-  const redirectForm = Object.entries({ ...signParams, sign: paySign })
-    .map(([k, v]) => `<input type="hidden" name="${k}" value="${v}">`)
-    .join("");
-
   return {
-    payUrl: `data:text/html,<form id="f" method="POST" action="${XDDPAY_GATEWAY}">${redirectForm}</form><script>document.getElementById("f").submit()</script>`,
+    payUrl: `${XDDPAY_GATEWAY}?format=json`,
+    qrImg: data.qr_img || "",
+    qrCode: data.qr || "",
+    xddpayOrder: data.xddpay_order || "",
+    realMoney: data.realmoney || String(money),
   } satisfies CreatePaymentResult;
 }
 
 export function verifyNotifySign(params: Record<string, string>): boolean {
-  const { sign: receivedSign, ...rest } = params;
+  const receivedSign = (params.sign || "").toUpperCase();
   if (!receivedSign) return false;
-  const expected = sign(rest);
-  return receivedSign.toUpperCase() === expected.toUpperCase();
+  const expected = signNotify(params);
+  return receivedSign === expected;
 }
 
 export async function queryOrderStatus(orderNo: string): Promise<string> {
-  const signParams = {
-    app_id: getAppId(),
-    order_no: orderNo,
-  };
-  const querySign = sign(signParams);
-
-  const url = `${XDDPAY_QUERY_URL}?app_id=${signParams.app_id}&order_no=${orderNo}&sign=${querySign}`;
+  const appId = getAppId();
+  const querySign = signQuery({ app_id: appId, order_no: orderNo });
+  const url = `${XDDPAY_QUERY_URL}?app_id=${appId}&order_no=${orderNo}&sign=${querySign}`;
   const response = await fetch(url);
   const text = await response.text();
 
