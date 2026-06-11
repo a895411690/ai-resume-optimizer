@@ -62,6 +62,7 @@ import {
 import { supabase } from "@/lib/supabase";
 
 const STORAGE_KEY = "resume_demo";
+const DEMO_AI_LIMIT_MESSAGE = "Demo 模式可体验编辑、导入和导出，AI 诊断优化需登录后使用。";
 
 type Version = "original" | "optimized";
 type EditorMode = "structured" | "markdown";
@@ -433,6 +434,28 @@ export default function Page() {
     setResume(loadResume());
   }
 
+  function ensureAiAccess() {
+    if (demo) {
+      setError(DEMO_AI_LIMIT_MESSAGE);
+      return false;
+    }
+    if (!user) {
+      setError("请先登录后再使用 AI 诊断优化功能。");
+      return false;
+    }
+    return true;
+  }
+
+  async function getAuthHeaders() {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) throw new Error("登录状态已过期，请重新登录后使用 AI 功能。");
+    return {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+    };
+  }
+
   async function handleLogout() {
     if (!demo) await supabase.auth.signOut();
     setDemo(false);
@@ -445,13 +468,14 @@ export default function Page() {
 
   async function requestDiagnosis() {
     if (!hasOriginal) return null;
+    if (!ensureAiAccess()) return null;
     setBusy("diagnose");
     setError("");
 
     try {
       const response = await fetch("/api/diagnose", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({
           markdown: resume.original_content,
           structuredResume: resume.structuredResume,
@@ -476,13 +500,14 @@ export default function Page() {
 
   async function requestOptimization(inputDiagnosis?: Diagnosis | null) {
     if (!hasOriginal) return;
+    if (!ensureAiAccess()) return;
     setBusy("optimize");
     setError("");
 
     try {
       const response = await fetch("/api/optimize", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({
           markdown: resume.original_content,
           structuredResume: resume.structuredResume,
@@ -512,6 +537,7 @@ export default function Page() {
   }
 
   async function runFullFlow() {
+    if (!ensureAiAccess()) return;
     setBusy("flow");
     setError("");
     const nextDiagnosis = await requestDiagnosis();
@@ -534,7 +560,7 @@ export default function Page() {
     try {
       const response = await fetch("/api/recommend-templates", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({
           userType: resolveRecommendUserType(),
           targetRole: recommendTargetRole || resume.position,
@@ -571,12 +597,13 @@ export default function Page() {
   }
 
   async function handleOptimizeModule(moduleName: string) {
+    if (!ensureAiAccess()) return;
     setOptimizingModule(moduleName);
     setError("");
     try {
       const response = await fetch("/api/optimize-module", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({
           module: moduleName,
           structuredResume: resume.structuredResume,
@@ -961,20 +988,25 @@ export default function Page() {
           )}
 
           <section className="space-y-2">
-            <Button className="w-full justify-start" disabled={!hasOriginal || busy === "flow"} onClick={runFullFlow}>
+            <Button className="w-full justify-start" disabled={demo || !hasOriginal || busy === "flow"} onClick={runFullFlow}>
               {busy === "flow" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4" />}
               诊断并优化
             </Button>
             <div className="grid grid-cols-2 gap-2">
-              <Button variant="outline" size="sm" disabled={!hasOriginal || busy === "diagnose"} onClick={requestDiagnosis}>
+              <Button variant="outline" size="sm" disabled={demo || !hasOriginal || busy === "diagnose"} onClick={requestDiagnosis}>
                 {busy === "diagnose" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Stethoscope className="mr-1 h-3 w-3" />}
                 只诊断
               </Button>
-              <Button variant="outline" size="sm" disabled={!hasOriginal || busy === "optimize"} onClick={() => requestOptimization()}>
+              <Button variant="outline" size="sm" disabled={demo || !hasOriginal || busy === "optimize"} onClick={() => requestOptimization()}>
                 {busy === "optimize" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Target className="mr-1 h-3 w-3" />}
                 只优化
               </Button>
             </div>
+            {demo && (
+              <div className="rounded-md border border-amber-100 bg-amber-50 p-3 text-xs text-amber-800">
+                {DEMO_AI_LIMIT_MESSAGE}
+              </div>
+            )}
             {error && (
               <div className="rounded-md border border-red-100 bg-red-50 p-3 text-xs text-red-700">
                 {error}
@@ -1193,7 +1225,7 @@ export default function Page() {
               </div>
             </div>
             {editorMode === "structured" ? (
-              <StructuredResumeEditor structuredResume={currentStructuredResume} userType={userType} onChange={handleStructuredResumeChange} onOptimizeModule={handleOptimizeModule} optimizingModule={optimizingModule} />
+              <StructuredResumeEditor structuredResume={currentStructuredResume} userType={userType} onChange={handleStructuredResumeChange} onOptimizeModule={demo ? undefined : handleOptimizeModule} optimizingModule={optimizingModule} />
             ) : (
               <Textarea
                 className="flex-1 resize-none rounded-none border-0 p-3 font-mono text-xs leading-relaxed focus-visible:ring-0 sm:p-4"

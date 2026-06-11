@@ -6,6 +6,7 @@ import {
 } from "@/lib/ai-resume-contract.js";
 import { chooseDeepSeekModel } from "@/lib/deepseek-model-router.js";
 import { normalizeStructuredResumeV1, renderStructuredResumeV1Markdown } from "@/lib/resume-schema.js";
+import { requireAuthenticatedUser } from "@/lib/api-auth";
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
@@ -68,6 +69,9 @@ async function callDeepSeek(messages: Array<{ role: "system" | "user"; content: 
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireAuthenticatedUser(req);
+    if ("response" in auth) return auth.response;
+
     const body = await req.json();
     const moduleName = String(body.module || "").trim();
     if (!moduleName || !MODULE_LABELS[moduleName]) {
