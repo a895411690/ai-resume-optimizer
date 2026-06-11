@@ -1,13 +1,8 @@
 node_modules
 .next
 .git
-.gitignore
 .vercel
 docs
 test
-*.md
-.env*
-Dockerfile
-docker-compose*.yml
 .dockerignore
-src/types
+Dockerfile

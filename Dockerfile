@@ -4,7 +4,7 @@ RUN apk add --no-cache libc6-compat
 
 FROM base AS deps
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm ci
 
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
@@ -15,9 +15,11 @@ FROM base AS runner
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+
 COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+
 USER nextjs
 EXPOSE 3100
 ENV PORT=3100
