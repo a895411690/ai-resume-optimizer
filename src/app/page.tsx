@@ -522,6 +522,20 @@ export default function Page() {
     return true;
   }
 
+  function decrementLocalOptimizationCount() {
+    setEntitlement((prev) => {
+      if (!prev || prev.isVip) return prev;
+      return { ...prev, remainingFreeOptimizations: Math.max(0, prev.remainingFreeOptimizations - 1), freeOptimizationUsed: true };
+    });
+  }
+
+  function rollbackLocalOptimizationCount() {
+    setEntitlement((prev) => {
+      if (!prev || prev.isVip) return prev;
+      return { ...prev, remainingFreeOptimizations: Math.min(1, prev.remainingFreeOptimizations + 1), freeOptimizationUsed: false };
+    });
+  }
+
   function ensureOptimizationAccess() {
     if (demo) {
       setError(DEMO_AI_LIMIT_MESSAGE);
@@ -592,6 +606,7 @@ export default function Page() {
   async function requestOptimization(inputDiagnosis?: Diagnosis | null) {
     if (!hasOriginal) return;
     if (!ensureOptimizationAccess()) return;
+    decrementLocalOptimizationCount();
     setBusy("optimize");
     setError("");
 
@@ -611,6 +626,7 @@ export default function Page() {
       });
       const data = await response.json();
       if (data.code === "VIP_REQUIRED") {
+        rollbackLocalOptimizationCount();
         handleVipRequired(data.error || VIP_REQUIRED_MESSAGE);
         return;
       }
@@ -626,6 +642,7 @@ export default function Page() {
       saveRecord("optimize", resume.position || "简历优化", result.editSummary?.slice(0, 2).join("；") || "优化完成", data.modelTier || "");
       void refreshEntitlement();
     } catch (exception) {
+      rollbackLocalOptimizationCount();
       setError(getErrorMessage(exception));
     } finally {
       setBusy(null);
@@ -634,10 +651,16 @@ export default function Page() {
 
   async function runFullFlow() {
     if (!ensureOptimizationAccess()) return;
+    decrementLocalOptimizationCount();
     setBusy("flow");
     setError("");
     const nextDiagnosis = await requestDiagnosis();
-    if (nextDiagnosis) await requestOptimization(nextDiagnosis);
+    if (!nextDiagnosis) {
+      rollbackLocalOptimizationCount();
+      return;
+    }
+    await requestOptimization(nextDiagnosis);
+
     setBusy(null);
   }
 
@@ -694,6 +717,7 @@ export default function Page() {
 
   async function handleOptimizeModule(moduleName: string) {
     if (!ensureOptimizationAccess()) return;
+    decrementLocalOptimizationCount();
     setOptimizingModule(moduleName);
     setError("");
     try {
@@ -711,6 +735,7 @@ export default function Page() {
       });
       const data = await response.json();
       if (data.code === "VIP_REQUIRED") {
+        rollbackLocalOptimizationCount();
         handleVipRequired(data.error || VIP_REQUIRED_MESSAGE);
         return;
       }
@@ -721,6 +746,7 @@ export default function Page() {
       setOptimization((prev) => prev ? { ...prev, editSummary: [...(data.optimization?.editSummary || []), ...(prev.editSummary || [])] } : null);
       void refreshEntitlement();
     } catch (exception) {
+      rollbackLocalOptimizationCount();
       setError(getErrorMessage(exception));
     } finally {
       setOptimizingModule(null);
