@@ -57,6 +57,15 @@ test("page exposes VIP entry and handles paid optimization gating", () => {
   assert.match(source, /支付二维码/);
 });
 
+test("page does not keep selling VIP to users who already have unlimited optimization", () => {
+  const source = readFileSync(new URL("../src/app/page.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /hasUnlimitedOptimization/);
+  assert.match(source, /!\s*hasUnlimitedOptimization\s*\?\s*\(/);
+  assert.match(source, /已开通/);
+  assert.match(source, /已拥有永久 VIP/);
+});
+
 test("AI API routes require authenticated users", () => {
   for (const route of [
     "../src/app/api/optimize/route.ts",
