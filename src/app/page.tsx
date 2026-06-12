@@ -419,7 +419,11 @@ export default function Page() {
 
       const formData = new FormData();
       formData.append("file", file);
-      const response = await fetch("/api/import", { method: "POST", body: formData });
+      const response = await fetch("/api/import", {
+        method: "POST",
+        headers: await getUploadHeaders(),
+        body: formData,
+      });
       const data = await response.json();
       if (!response.ok || data.error) throw new Error(data.error || "文件解析失败");
 
@@ -502,6 +506,16 @@ export default function Page() {
       "Content-Type": "application/json",
       "X-Demo-Client-Id": getDemoClientId(),
     };
+  }
+
+  async function getUploadHeaders(): Promise<Record<string, string>> {
+    if (demo || !user) {
+      return { "X-Demo-Client-Id": getDemoClientId() };
+    }
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) throw new Error("登录状态已过期，请重新登录后导入简历。");
+    return { "Authorization": `Bearer ${token}` };
   }
 
   async function refreshEntitlement() {
@@ -1566,6 +1580,7 @@ export default function Page() {
                 </p>
                 <p className="text-xs text-slate-500">订单号: {paymentOrderNo}</p>
                 {paymentQrImg && (
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img src={paymentQrImg} alt="支付二维码" className="h-48 w-48 rounded border" />
                 )}
                 {paymentPolling && (

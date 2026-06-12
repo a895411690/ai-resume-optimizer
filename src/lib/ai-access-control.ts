@@ -113,21 +113,13 @@ export async function reserveOptimizationAccess(userId: string, action: Exclude<
     return { allowed: true, eventId: event.id, entitlementSource };
   }
 
-  // Credits: deduct 1
   if (entitlementSource === "credits") {
-    const { data: claimed, error: claimError } = await admin
-      .from("user_entitlements")
-      .update({
-        optimization_credits: entitlement.optimizationCredits - 1,
-      })
-      .eq("user_id", userId)
-      .gte("optimization_credits", 1)
-      .select("user_id")
-      .maybeSingle();
-
+    const { data: claimed, error: claimError } = await admin.rpc("reserve_optimization_credit", {
+      uid: userId,
+      event_id: event.id,
+    });
     if (claimError) throw new Error(claimError.message || "次卡扣减失败");
     if (!claimed) {
-      await admin.from("ai_usage_events").update({ status: "blocked" }).eq("id", event.id);
       return { allowed: false, response: vipRequiredResponse() };
     }
     return { allowed: true, eventId: event.id, entitlementSource };
@@ -167,16 +159,21 @@ export async function markAiUsageFailed(eventId: string | null) {
   const admin = getSupabaseAdmin();
   const { data } = await admin
     .from("ai_usage_events")
-    .select("id,user_id,entitlement_source")
+    .select("id,user_id,entitlement_source,status")
     .eq("id", eventId)
     .maybeSingle();
 
-  await admin
+  if (!data?.user_id || data.status !== "reserved") return;
+
+  const { data: failed } = await admin
     .from("ai_usage_events")
     .update({ status: "failed", completed_at: new Date().toISOString() })
-    .eq("id", eventId);
+    .eq("id", eventId)
+    .eq("status", "reserved")
+    .select("id")
+    .maybeSingle();
 
-  if (!data?.user_id) return;
+  if (!failed?.id) return;
 
   if (data.entitlement_source === "free_once") {
     await admin
@@ -185,7 +182,7 @@ export async function markAiUsageFailed(eventId: string | null) {
       .eq("user_id", data.user_id)
       .eq("free_optimization_event_id", eventId);
   } else if (data.entitlement_source === "credits") {
-    await admin.rpc("increment_credits", { uid: data.user_id, amount: 1 });
+    await admin.rpc("refund_optimization_credit", { uid: data.user_id, event_id: eventId });
   }
 }
 
@@ -203,59 +200,20 @@ export async function reserveDemoDiagnosisAccess(req: NextRequest): Promise<Acce
   const ipHash = hashValue(readIp(req));
   const clientHash = hashValue(demoClientId);
 
-  const { data: current, error: currentError } = await admin
-    .from("demo_diagnosis_usage_daily")
-    .select("diagnosis_count")
-    .eq("usage_day", usageDay)
-    .eq("ip_hash", ipHash)
-    .eq("client_hash", clientHash)
-    .maybeSingle();
-  if (currentError) throw new Error(currentError.message || "Demo 诊断次数读取失败");
+  const { data: eventId, error } = await admin.rpc("reserve_demo_diagnosis", {
+    usage_day_input: usageDay,
+    ip_hash_input: ipHash,
+    client_hash_input: clientHash,
+    max_count: DEMO_DAILY_DIAGNOSIS_LIMIT,
+  });
+  if (error) throw new Error(error.message || "Demo 诊断次数更新失败");
 
-  const currentCount = Number(current?.diagnosis_count || 0);
-  if (currentCount >= DEMO_DAILY_DIAGNOSIS_LIMIT) {
+  if (!eventId) {
     return {
       allowed: false,
       response: NextResponse.json({ error: DEMO_DIAGNOSIS_LIMIT_MESSAGE }, { status: 429 }),
     };
   }
 
-  const { data: event, error: eventError } = await admin
-    .from("ai_usage_events")
-    .insert({
-      action: "diagnose",
-      mode: "demo",
-      entitlement_source: "demo_daily",
-      status: "completed",
-      demo_day: usageDay,
-      demo_ip_hash: ipHash,
-      demo_client_hash: clientHash,
-      completed_at: new Date().toISOString(),
-    })
-    .select("id")
-    .single();
-  if (eventError || !event?.id) throw new Error(eventError?.message || "Demo 诊断记录失败");
-
-  if (current) {
-    const { error } = await admin
-      .from("demo_diagnosis_usage_daily")
-      .update({ diagnosis_count: currentCount + 1, last_event_id: event.id })
-      .eq("usage_day", usageDay)
-      .eq("ip_hash", ipHash)
-      .eq("client_hash", clientHash);
-    if (error) throw new Error(error.message || "Demo 诊断次数更新失败");
-  } else {
-    const { error } = await admin
-      .from("demo_diagnosis_usage_daily")
-      .insert({
-        usage_day: usageDay,
-        ip_hash: ipHash,
-        client_hash: clientHash,
-        diagnosis_count: 1,
-        last_event_id: event.id,
-      });
-    if (error) throw new Error(error.message || "Demo 诊断次数创建失败");
-  }
-
-  return { allowed: true, eventId: event.id, entitlementSource: "demo_daily" };
+  return { allowed: true, eventId, entitlementSource: "demo_daily" };
 }

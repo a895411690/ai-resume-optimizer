@@ -39,3 +39,16 @@ test("PDF import keeps full normalized markdown when model extraction falls back
   assert.match(source, /const markdown = modelStructured[\s\S]+renderStructuredResumeV1Markdown\(structured\)[\s\S]+normalizeResumeMarkdown\(rawText\);/);
   assert.doesNotMatch(source, /const structured = modelStructured \|\| buildFallbackStructuredResume\(rawText\);\s*const markdown = renderStructuredResumeMarkdown\(structured\);/);
 });
+
+test("import API requires authenticated or demo access and limits upload cost", () => {
+  const source = readFileSync(new URL("../src/app/api/import/route.ts", import.meta.url), "utf8");
+
+  assert.match(source, /getOptionalAuthenticatedUser/);
+  assert.match(source, /x-demo-client-id/);
+  assert.match(source, /MAX_IMPORT_FILE_BYTES = 8 \* 1024 \* 1024/);
+  assert.match(source, /MAX_PDF_PAGES = 20/);
+  assert.match(source, /MAX_EXTRACTED_TEXT_LENGTH = 100_000/);
+  assert.match(source, /file\.size > MAX_IMPORT_FILE_BYTES/);
+  assert.match(source, /document\.numPages > MAX_PDF_PAGES/);
+  assert.match(source, /auth\.user \? await callDeepSeekForExtraction\(rawText\) : null/);
+});

@@ -2,7 +2,6 @@ import { createHash } from "crypto";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 const XDDPAY_GATEWAY = "https://gateway.xddpay.com";
-const XDDPAY_QUERY_URL = "https://gateway.xddpay.com/query.ashx";
 
 export type PayType = 43 | 44; // 43=alipay, 44=wechat
 
@@ -51,10 +50,6 @@ function signNotify(params: Record<string, string>): string {
   ];
   if (params.extra) ordered.push(["extra", params.extra]);
   return md5Sign(buildSignString(ordered));
-}
-
-function signQuery(params: { app_id: string; order_no: string }): string {
-  return md5Sign(buildSignString([["app_id", params.app_id], ["order_no", params.order_no]]));
 }
 
 export interface CreatePaymentResult {

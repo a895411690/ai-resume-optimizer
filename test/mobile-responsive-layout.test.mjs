@@ -10,7 +10,8 @@ test("main workspace stacks and avoids fixed desktop widths on mobile", () => {
   assert.match(source, /w-full flex-col border-b bg-white md:h-full md:w-\[320px\]/);
   assert.match(source, /flex flex-wrap items-start gap-2 border-b bg-white px-3/);
   assert.match(source, /grid gap-4 xl:grid-cols-\[minmax\(0,1fr\)_360px\]/);
-  assert.match(source, /h-\[38svh\] min-h-48/);
+  assert.match(source, /const \[editorHeight, setEditorHeight\] = useState\(38\);/);
+  assert.match(source, /style=\{\{ height: `\$\{editorHeight\}svh`, minHeight: 192 \}\}/);
   assert.match(source, /w-\[calc\(100vw-1rem\)\]/);
   assert.doesNotMatch(source, /<div className="flex h-screen bg-slate-100 text-slate-950">/);
   assert.doesNotMatch(source, /<aside className="w-\[320px\] flex-shrink-0/);

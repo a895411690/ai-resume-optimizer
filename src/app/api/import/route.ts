@@ -7,11 +7,19 @@ import {
 import { normalizeResumeMarkdown } from "@/lib/resume-formatting.js";
 import { safeParseJsonObject } from "@/lib/ai-resume-contract.js";
 import { normalizeStructuredResumeV1, renderStructuredResumeV1Markdown } from "@/lib/resume-schema.js";
+import { getOptionalAuthenticatedUser } from "@/lib/api-auth";
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
+const MAX_IMPORT_FILE_BYTES = 8 * 1024 * 1024;
+const MAX_PDF_PAGES = 20;
+const MAX_EXTRACTED_TEXT_LENGTH = 100_000;
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : "解析失败";
+
+function readDemoClientId(req: NextRequest) {
+  return (req.headers.get("x-demo-client-id") || "").trim();
+}
 
 function installPdfNodePolyfills() {
   const globalScope = globalThis as Record<string, unknown>;
@@ -160,6 +168,9 @@ async function extractPdfText(buffer: Buffer) {
   } as Record<string, unknown>);
   try {
     const document = await loadingTask.promise;
+    if (document.numPages > MAX_PDF_PAGES) {
+      throw new Error(`PDF 页数不能超过 ${MAX_PDF_PAGES} 页`);
+    }
     const pages: string[] = [];
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) {
       const page = await document.getPage(pageNumber);
@@ -180,9 +191,18 @@ async function extractPdfText(buffer: Buffer) {
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await getOptionalAuthenticatedUser(req);
+    if ("response" in auth) return auth.response;
+    if (!auth.user && !readDemoClientId(req)) {
+      return NextResponse.json({ error: "导入简历需要登录或有效的 Demo 体验标识。" }, { status: 400 });
+    }
+
     const formData = await req.formData();
     const file = formData.get("file") as File;
     if (!file) return NextResponse.json({ error: "未上传文件" }, { status: 400 });
+    if (file.size > MAX_IMPORT_FILE_BYTES) {
+      return NextResponse.json({ error: "文件不能超过 8MB，请压缩后重试。" }, { status: 413 });
+    }
 
     const fileName = file.name.toLowerCase();
     const buffer = Buffer.from(await file.arrayBuffer());
@@ -200,7 +220,11 @@ export async function POST(req: NextRequest) {
     }
 
     const rawText = text.replace(/\r\n/g,"\n").replace(/\n{4,}/g,"\n\n\n").trim();
-    const modelStructured = await callDeepSeekForExtraction(rawText);
+    if (rawText.length > MAX_EXTRACTED_TEXT_LENGTH) {
+      return NextResponse.json({ error: "文件解析文本过长，请精简后重试。" }, { status: 413 });
+    }
+
+    const modelStructured = auth.user ? await callDeepSeekForExtraction(rawText) : null;
     const fallbackStructured = buildFallbackStructuredResume(rawText);
     const structured = normalizeStructuredResumeV1(modelStructured || fallbackStructured);
     const markdown = modelStructured

@@ -52,7 +52,9 @@ test("page exposes VIP entry and handles paid optimization gating", () => {
   assert.match(source, /VIP_REQUIRED/);
   assert.match(source, /vipDialogOpen/);
   assert.match(source, /开通 VIP/);
-  assert.match(source, /二维码位/);
+  assert.match(source, /次卡 10 次/);
+  assert.match(source, /永久 VIP/);
+  assert.match(source, /支付二维码/);
 });
 
 test("AI API routes require authenticated users", () => {
