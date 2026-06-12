@@ -19,6 +19,24 @@ type ResumeTemplateCenterProps = {
 };
 
 const SCENES = ["全部", "通用", "校招", "社招", "国企/公考", "外企双语"];
+const FAMILIES = [
+  { value: "全部家族", label: "全部家族" },
+  { value: "ats", label: "ATS 网申" },
+  { value: "modern_professional", label: "现代专业" },
+  { value: "executive_expert", label: "高管专家" },
+  { value: "campus_intern", label: "校招实习" },
+];
+const MARKET_TEMPLATE_IDS = [
+  "ats_chronological",
+  "ats_compact_cn",
+  "modern_product_data",
+  "tech_sidebar_pro",
+  "executive_impact",
+  "expert_timeline",
+  "campus_project_plus",
+  "intern_clean_onepage",
+];
+const MARKET_TEMPLATE_ORDER = new Map(MARKET_TEMPLATE_IDS.map((id, index) => [id, index]));
 const RECENT_STORAGE_KEY = "resume-template-center-recent";
 
 function includesQuery(values: string[], query: string) {
@@ -138,6 +156,7 @@ function renderTemplatePreview(template: (typeof RESUME_TEMPLATES)[number]) {
 export function ResumeTemplateCenter({ open, value, userType, targetRole, structuredResume, onOpenChange, onSelect }: ResumeTemplateCenterProps) {
   const [query, setQuery] = useState("");
   const [scene, setScene] = useState("全部");
+  const [family, setFamily] = useState("全部家族");
   const [recentTemplateIds, setRecentTemplateIds] = useState<string[]>([]);
   const normalizedQuery = query.trim().toLowerCase();
   const recommendations = useMemo(
@@ -145,11 +164,28 @@ export function ResumeTemplateCenter({ open, value, userType, targetRole, struct
     [userType, targetRole, structuredResume],
   );
   const recommendationById = new Map(recommendations.map((item) => [item.templateId, item.reason]));
-  const filteredTemplates = RESUME_TEMPLATES.filter((template) => {
-    const sceneMatched = scene === "全部" || template.scenarios.includes(scene);
-    const queryMatched = includesQuery([template.name, template.description, ...template.tags, ...template.scenarios, ...template.audience, ...template.strengths], normalizedQuery);
-    return sceneMatched && queryMatched;
-  });
+  const filteredTemplates = RESUME_TEMPLATES
+    .filter((template) => {
+      const sceneMatched = scene === "全部" || template.scenarios.includes(scene);
+      const familyMatched = family === "全部家族" || template.family === family;
+      const queryMatched = includesQuery([
+        template.id,
+        template.name,
+        template.description,
+        template.family,
+        ...template.tags,
+        ...template.marketTags,
+        ...template.scenarios,
+        ...template.audience,
+        ...template.strengths,
+      ], normalizedQuery);
+      return sceneMatched && familyMatched && queryMatched;
+    })
+    .sort((left, right) => {
+      const leftRank = MARKET_TEMPLATE_ORDER.get(left.id) ?? 99;
+      const rightRank = MARKET_TEMPLATE_ORDER.get(right.id) ?? 99;
+      return leftRank - rightRank;
+    });
   const selectTemplate = (templateId: string) => {
     const nextRecent = [templateId, ...recentTemplateIds.filter((id) => id !== templateId)].slice(0, 3);
     setRecentTemplateIds(nextRecent);
@@ -190,8 +226,21 @@ export function ResumeTemplateCenter({ open, value, userType, targetRole, struct
             </div>
           </div>
 
+          <div className="flex flex-wrap gap-1">
+            {FAMILIES.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                className={`h-8 rounded-md border px-2 text-xs font-medium ${family === item.value ? "border-emerald-600 bg-emerald-50 text-emerald-700" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+                onClick={() => setFamily(item.value)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
           {!!recentTemplateIds.length && (
-            <p className="text-xs text-muted-foreground">最近使用：{recentTemplateIds.map((id) => RESUME_TEMPLATES.find((template) => template.id === id)?.name).filter(Boolean).join("、")}</p>
+            <p className="text-xs text-muted-foreground">最近使用：{recentTemplateIds.map((id: string) => RESUME_TEMPLATES.find((template) => template.id === id)?.name).filter(Boolean).join("、")}</p>
           )}
 
           <div className="grid gap-3 md:grid-cols-3">
@@ -210,7 +259,10 @@ export function ResumeTemplateCenter({ open, value, userType, targetRole, struct
                     {selected && <span className="rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">当前使用</span>}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-1">
-                    {template.tags.map((tag) => <span key={tag} className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">{tag}</span>)}
+                    {template.tags.map((tag: string) => <span key={tag} className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">{tag}</span>)}
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {template.marketTags.map((tag: string) => <span key={tag} className="rounded border border-emerald-100 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">{tag}</span>)}
                   </div>
                   <p className="mt-3 text-[11px] text-slate-600">适配场景：{template.scenarios.join("、")}</p>
                   <p className="mt-1 text-[11px] text-slate-600">推荐人群：{template.audience.join("、")}</p>

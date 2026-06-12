@@ -1,6 +1,6 @@
 const DEFAULT_TEMPLATE_ID = "classic";
 
-const RESUME_TEMPLATES = [
+const RAW_RESUME_TEMPLATES = [
   {
     id: "classic",
     name: "经典单栏",
@@ -397,7 +397,202 @@ const RESUME_TEMPLATES = [
     preview: { layout: "sidebar-right", accent: "#6d28d9" },
     layout: "sidebar-right",
   },
+  {
+    id: "ats_chronological",
+    name: "ATS Chronological",
+    description: "反向时间线结构，弱装饰、强解析，适合英文/外企 ATS 网申。",
+    tags: ["ATS", "反向时间线", "英文网申", "海投"],
+    scenarios: ["通用", "社招", "外企双语"],
+    recommendedFor: ["fresh_graduate", "junior", "career_switcher", "senior"],
+    audience: ["ATS 网申", "外企投递", "海投求职者"],
+    strengths: ["解析兼容性强", "经历顺序清晰", "适合批量投递"],
+    preview: { layout: "single", accent: "#111827" },
+    layout: "single",
+    family: "ats",
+    density: "balanced",
+    atsLevel: "high",
+    contentPriority: ["work", "education", "projects", "skills"],
+    marketTags: ["ATS 友好", "适合网申", "时间线"],
+  },
+  {
+    id: "ats_compact_cn",
+    name: "中文紧凑网申",
+    description: "中文单页高密度版式，适合银行、国企和互联网网申。",
+    tags: ["ATS", "中文网申", "紧凑", "单页"],
+    scenarios: ["通用", "社招", "国企/公考"],
+    recommendedFor: ["fresh_graduate", "junior", "career_switcher", "senior"],
+    audience: ["中文网申", "银行国企", "高频投递"],
+    strengths: ["单页信息密度高", "结构稳定", "兼顾中文阅读习惯"],
+    preview: { layout: "single", accent: "#374151" },
+    layout: "single",
+    family: "ats",
+    density: "compact",
+    atsLevel: "high",
+    contentPriority: ["work", "education", "projects", "skills"],
+    marketTags: ["ATS 友好", "中文网申", "单页高密度"],
+  },
+  {
+    id: "modern_product_data",
+    name: "现代产品/数据",
+    description: "左侧突出技能工具，右侧承载成果叙事，适合产品、数据、运营岗位。",
+    tags: ["现代", "产品", "数据", "运营"],
+    scenarios: ["社招", "通用"],
+    recommendedFor: ["junior", "career_switcher"],
+    audience: ["产品经理", "数据分析", "运营增长"],
+    strengths: ["技能工具醒目", "成果叙事清晰", "信息密度适中"],
+    preview: { layout: "two-column", accent: "#0f766e" },
+    layout: "two-column",
+    family: "modern_professional",
+    density: "balanced",
+    atsLevel: "medium",
+    contentPriority: ["skills", "work", "projects", "education"],
+    marketTags: ["现代专业", "产品数据", "双栏"],
+  },
+  {
+    id: "tech_sidebar_pro",
+    name: "技术侧栏专业",
+    description: "右侧技能栈和证书，正文突出项目影响，适合研发与数据工程岗位。",
+    tags: ["技术", "研发", "数据工程", "侧栏"],
+    scenarios: ["社招", "通用"],
+    recommendedFor: ["junior", "career_switcher", "senior"],
+    audience: ["研发工程师", "数据工程师", "算法/技术岗"],
+    strengths: ["技术栈集中展示", "项目成果突出", "适合技能导向岗位"],
+    preview: { layout: "sidebar-right", accent: "#0369a1" },
+    layout: "sidebar-right",
+    family: "modern_professional",
+    density: "compact",
+    atsLevel: "medium",
+    contentPriority: ["skills", "projects", "work", "education"],
+    marketTags: ["现代专业", "技术栈", "侧栏"],
+  },
+  {
+    id: "executive_impact",
+    name: "高管影响力",
+    description: "强调职业摘要和关键成果，适合管理者、负责人和业务专家。",
+    tags: ["高管", "管理", "影响力", "关键成果"],
+    scenarios: ["社招", "通用"],
+    recommendedFor: ["senior"],
+    audience: ["管理岗位", "业务负责人", "资深专家"],
+    strengths: ["关键成果前置", "正式专业", "突出管理影响力"],
+    preview: { layout: "single-accent", accent: "#1d4ed8" },
+    layout: "single-accent",
+    family: "executive_expert",
+    density: "spacious",
+    atsLevel: "medium",
+    contentPriority: ["self_evaluation", "manage_exp", "work", "projects", "skills"],
+    marketTags: ["高管专家", "成果导向", "正式"],
+  },
+  {
+    id: "expert_timeline",
+    name: "专家成长轨迹",
+    description: "用时间轴呈现职业成长节点，适合专家路线和多段经历候选人。",
+    tags: ["专家", "时间轴", "职业轨迹", "资深"],
+    scenarios: ["社招", "通用"],
+    recommendedFor: ["senior", "junior"],
+    audience: ["专家路线", "多段经历", "资深社招"],
+    strengths: ["职业轨迹清晰", "成长节点突出", "适合讲述长期积累"],
+    preview: { layout: "timeline", accent: "#0284c7" },
+    layout: "timeline",
+    family: "executive_expert",
+    density: "balanced",
+    atsLevel: "medium",
+    contentPriority: ["work", "projects", "manage_exp", "skills", "education"],
+    marketTags: ["高管专家", "时间轴", "成长轨迹"],
+  },
+  {
+    id: "campus_project_plus",
+    name: "校招项目突出",
+    description: "项目、竞赛、课程权重前置，适合有实践经历的应届生。",
+    tags: ["校招", "项目", "竞赛", "应届生"],
+    scenarios: ["校招", "通用"],
+    recommendedFor: ["fresh_graduate"],
+    audience: ["应届生", "技术校招", "产品校招"],
+    strengths: ["项目实践突出", "课程奖项清晰", "适合校招筛选"],
+    preview: { layout: "single", accent: "#0891b2" },
+    layout: "single",
+    family: "campus_intern",
+    density: "balanced",
+    atsLevel: "high",
+    contentPriority: ["projects", "education", "campus_exp", "skills", "work"],
+    marketTags: ["校招实习", "项目突出", "应届生"],
+  },
+  {
+    id: "intern_clean_onepage",
+    name: "实习清爽一页",
+    description: "学习能力、实习职责、校园经历平衡，适合在校生投递实习。",
+    tags: ["实习", "在校生", "清爽", "一页"],
+    scenarios: ["校招", "通用"],
+    recommendedFor: ["fresh_graduate"],
+    audience: ["在校生", "实习投递", "初次求职"],
+    strengths: ["一页表达清晰", "学习能力突出", "适合实习岗位"],
+    preview: { layout: "single", accent: "#ca8a04" },
+    layout: "single",
+    family: "campus_intern",
+    density: "compact",
+    atsLevel: "high",
+    contentPriority: ["education", "campus_exp", "projects", "work", "skills"],
+    marketTags: ["校招实习", "一页简历", "实习"],
+  },
 ];
+
+const VALID_FAMILIES = new Set(["ats", "modern_professional", "executive_expert", "campus_intern"]);
+const VALID_DENSITIES = new Set(["compact", "balanced", "spacious"]);
+const VALID_ATS_LEVELS = new Set(["high", "medium", "low"]);
+
+function inferFamily(template) {
+  const text = [...template.tags, ...template.scenarios, ...template.audience, template.name].join(" ");
+  if (/校招|实习|校园|应届/.test(text)) return "campus_intern";
+  if (/高管|专家|管理|中高阶|国企|公考|法务|金融|医疗|学术/.test(text) || template.layout === "single-accent" || template.layout === "timeline") return "executive_expert";
+  if (/产品|数据|技术|运营|设计|双栏|侧栏|现代/.test(text) || template.layout === "two-column" || template.layout === "sidebar-right" || template.layout === "infographic") return "modern_professional";
+  if (/ATS|网申|海投|外企|银行/.test(text)) return "ats";
+  return "modern_professional";
+}
+
+function inferDensity(template) {
+  if (/紧凑|高密度|单页/.test([...template.tags, template.name].join(" "))) return "compact";
+  if (/优雅|高管|专家|正式|学术/.test([...template.tags, template.name].join(" "))) return "spacious";
+  return "balanced";
+}
+
+function inferAtsLevel(template, family) {
+  if (family === "ats" || template.layout === "single") return "high";
+  if (template.layout === "infographic") return "low";
+  return "medium";
+}
+
+function inferContentPriority(template, family) {
+  if (family === "campus_intern") return ["education", "projects", "campus_exp", "skills", "work"];
+  if (family === "executive_expert") return ["self_evaluation", "work", "manage_exp", "projects", "skills"];
+  if (family === "modern_professional") return ["skills", "work", "projects", "education"];
+  return ["work", "education", "projects", "skills"];
+}
+
+function inferMarketTags(template, family, atsLevel) {
+  const familyLabel = {
+    ats: "ATS 网申",
+    modern_professional: "现代专业",
+    executive_expert: "高管专家",
+    campus_intern: "校招实习",
+  }[family];
+  const atsLabel = atsLevel === "high" ? "ATS 友好" : atsLevel === "medium" ? "兼顾解析" : "视觉优先";
+  return [familyLabel, atsLabel, template.scenarios[0]].filter(Boolean);
+}
+
+function enrichTemplate(template) {
+  const family = VALID_FAMILIES.has(template.family) ? template.family : inferFamily(template);
+  const density = VALID_DENSITIES.has(template.density) ? template.density : inferDensity(template);
+  const atsLevel = VALID_ATS_LEVELS.has(template.atsLevel) ? template.atsLevel : inferAtsLevel(template, family);
+  return {
+    ...template,
+    family,
+    density,
+    atsLevel,
+    contentPriority: Array.isArray(template.contentPriority) && template.contentPriority.length ? template.contentPriority : inferContentPriority(template, family),
+    marketTags: Array.isArray(template.marketTags) && template.marketTags.length ? template.marketTags : inferMarketTags(template, family, atsLevel),
+  };
+}
+
+const RESUME_TEMPLATES = RAW_RESUME_TEMPLATES.map(enrichTemplate);
 
 function normalizeResumeTemplateId(value) {
   return RESUME_TEMPLATES.some((template) => template.id === value) ? value : DEFAULT_TEMPLATE_ID;

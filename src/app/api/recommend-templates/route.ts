@@ -17,6 +17,7 @@ const TEMPLATE_RECOMMEND_PROMPT = `你是一位资深简历顾问和排版顾问
 原则：
 - 只能返回 catalog 中存在的 templateId，不得自造模板 id。
 - 推荐理由必须解释岗位、阶段、简历内容与模板特点之间的关系。
+- 优先理解 family：fresh_graduate 候选人优先 campus_intern，senior 优先 executive_expert；产品/数据/技术/运营优先 modern_professional；外企、银行、网申、海投、ATS 关键词优先 ats。
 - 不要输出 Markdown，不要解释性前后缀。
 
 返回 JSON schema：
@@ -94,6 +95,11 @@ export async function POST(req: NextRequest) {
       scenarios: template.scenarios,
       audience: template.audience,
       strengths: template.strengths,
+      family: template.family,
+      density: template.density,
+      atsLevel: template.atsLevel,
+      marketTags: template.marketTags,
+      contentPriority: template.contentPriority,
       layout: template.layout,
     }));
 

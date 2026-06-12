@@ -87,11 +87,30 @@ function buildStructuredResumeViewModel(value) {
   };
 }
 
+function getTemplateTheme(template) {
+  const density = template.density || "balanced";
+  const compact = density === "compact";
+  const spacious = density === "spacious";
+  return {
+    density,
+    pagePadding: compact ? "p-3 sm:p-6 md:p-9" : spacious ? "p-5 sm:p-9 md:p-14" : "p-4 sm:p-8 md:p-12",
+    sectionTop: compact ? "mt-4 sm:mt-5" : spacious ? "mt-6 sm:mt-7" : "mt-5 sm:mt-6",
+    sectionTitle: compact ? "text-sm sm:text-base" : "text-base sm:text-lg",
+    printMargin: compact ? 28 : spacious ? 48 : 40,
+    printPadding: compact ? 16 : spacious ? 24 : 20,
+    printFontSize: compact ? 12 : spacious ? 13.5 : 13,
+    printLineHeight: compact ? 1.45 : spacious ? 1.7 : 1.6,
+    titleStyle: template.family === "ats" ? "plain" : template.layout === "single-accent" ? "accent" : "ruled",
+  };
+}
+
 function getPreviewTemplateClasses(templateId) {
   const template = getResumeTemplate(normalizeResumeTemplateId(templateId));
   const layout = template.layout;
   const accent = template.preview.accent;
-  const basePage = "mx-auto min-w-0 bg-white p-4 text-sm leading-relaxed shadow-sm sm:p-8 md:max-w-[794px] md:p-12 md:shadow-lg lg:min-h-[1123px] print:shadow-none print:p-0";
+  const theme = getTemplateTheme(template);
+  const basePage = `mx-auto min-w-0 bg-white ${theme.pagePadding} text-sm leading-relaxed shadow-sm md:max-w-[794px] md:shadow-lg lg:min-h-[1123px] print:shadow-none print:p-0`;
+  const sectionTitle = `mb-3 ${theme.sectionTop} break-words border-b pb-1 ${theme.sectionTitle} font-bold text-gray-800`;
   if (layout === "two-column") {
     return {
       page: `${basePage} md:p-0`,
@@ -99,7 +118,7 @@ function getPreviewTemplateClasses(templateId) {
       body: "md:grid md:grid-cols-[210px_minmax(0,1fr)]",
       main: "min-w-0 p-4 sm:p-8 md:p-10",
       sidebar: "border-b bg-slate-50 p-4 text-xs sm:p-6 md:border-b-0 md:text-slate-100",
-      sectionTitle: "mb-3 mt-5 break-words border-b border-gray-300 pb-1 text-base font-bold text-gray-800 sm:mt-6 sm:text-lg",
+      sectionTitle: `${sectionTitle} border-gray-300`,
       accent,
     };
   }
@@ -110,7 +129,7 @@ function getPreviewTemplateClasses(templateId) {
       body: "",
       main: "",
       sidebar: "",
-      sectionTitle: "mb-3 mt-5 break-words pb-1 text-base font-bold uppercase sm:mt-6 sm:text-lg",
+      sectionTitle: `${sectionTitle} uppercase`,
       accent,
     };
   }
@@ -121,7 +140,7 @@ function getPreviewTemplateClasses(templateId) {
       body: "",
       main: "",
       sidebar: "",
-      sectionTitle: "mb-3 mt-5 break-words pb-1 text-base font-bold text-gray-800 sm:mt-6 sm:text-lg",
+      sectionTitle,
       accent,
     };
   }
@@ -132,7 +151,7 @@ function getPreviewTemplateClasses(templateId) {
       body: "",
       main: "mt-6",
       sidebar: "",
-      sectionTitle: "mb-3 mt-5 break-words border-b pb-1 text-base font-bold text-gray-800 sm:mt-6 sm:text-lg",
+      sectionTitle,
       accent,
     };
   }
@@ -143,7 +162,7 @@ function getPreviewTemplateClasses(templateId) {
       body: "md:grid md:grid-cols-[minmax(0,1fr)_210px]",
       main: "min-w-0 p-4 sm:p-8 md:p-10",
       sidebar: "border-b bg-slate-50 p-4 text-xs sm:p-6 md:border-b-0 md:text-slate-100",
-      sectionTitle: "mb-3 mt-5 break-words border-b border-gray-300 pb-1 text-base font-bold text-gray-800 sm:mt-6 sm:text-lg",
+      sectionTitle: `${sectionTitle} border-gray-300`,
       accent,
     };
   }
@@ -153,7 +172,7 @@ function getPreviewTemplateClasses(templateId) {
     body: "",
     main: "",
     sidebar: "",
-    sectionTitle: "mb-3 mt-5 break-words border-b pb-1 text-base font-bold text-gray-800 sm:mt-6 sm:text-lg",
+    sectionTitle,
     accent,
   };
 }
@@ -162,7 +181,9 @@ function getTemplatePrintCss(templateId) {
   const template = getResumeTemplate(normalizeResumeTemplateId(templateId));
   const layout = template.layout;
   const accent = template.preview.accent;
-  const base = "body{font-family:Arial,'Microsoft YaHei',sans-serif;max-width:794px;margin:40px auto;padding:20px;font-size:13px;line-height:1.6;color:#111827}h1{font-size:22px;margin:0}h2{margin-top:20px;padding-bottom:4px;font-size:15px}h3{font-size:14px;margin-bottom:4px}li{margin-bottom:3px}.contact{font-size:12px;color:#4b5563;margin-top:8px}.section{break-inside:avoid}.resume-body{display:block}";
+  const theme = getTemplateTheme(template);
+  const headingTransform = theme.titleStyle === "accent" ? "text-transform:uppercase;" : "";
+  const base = `body{font-family:Arial,'Microsoft YaHei',sans-serif;max-width:794px;margin:${theme.printMargin}px auto;padding:${theme.printPadding}px;font-size:${theme.printFontSize}px;line-height:${theme.printLineHeight};color:#111827}h1{font-size:22px;margin:0}h2{margin-top:${theme.density === "compact" ? 16 : 20}px;padding-bottom:4px;font-size:15px;${headingTransform}}h3{font-size:14px;margin-bottom:4px}li{margin-bottom:${theme.density === "compact" ? 2 : 3}px}.contact{font-size:12px;color:#4b5563;margin-top:8px}.section{break-inside:avoid}.resume-body{display:block}`;
   if (layout === "two-column") {
     return `${base}.resume-body{display:grid;grid-template-columns:210px 1fr;gap:28px}.sidebar{background:${accent};color:#f8fafc;padding:24px}.main{padding:24px 0}.contact{color:#cbd5e1}h2{border-bottom:1px solid #d1d5db}.skills{margin-top:18px}`;
   }

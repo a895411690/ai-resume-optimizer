@@ -30,6 +30,17 @@ const customOrderedResume = {
   meta: { source: "test", warnings: [], sectionOrder: ["basics", "optional", "work", "projects", "skills", "education"] },
 };
 
+const marketTemplateIds = [
+  "ats_chronological",
+  "ats_compact_cn",
+  "modern_product_data",
+  "tech_sidebar_pro",
+  "executive_impact",
+  "expert_timeline",
+  "campus_project_plus",
+  "intern_clean_onepage",
+];
+
 test("preview classes expose two-column template without forcing mobile two-column", () => {
   const classes = getPreviewTemplateClasses("modern");
   assert.match(classes.page, /bg-white/);
@@ -40,6 +51,32 @@ test("print CSS is template-specific", () => {
   assert.match(getTemplatePrintCss("classic"), /border-bottom:2px solid #2563eb/);
   assert.match(getTemplatePrintCss("modern"), /grid-template-columns:210px 1fr/);
   assert.match(getTemplatePrintCss("executive"), /#1d4ed8/);
+});
+
+test("market flagship templates expose preview and export themes", () => {
+  for (const templateId of marketTemplateIds) {
+    const classes = getPreviewTemplateClasses(templateId);
+    const css = getTemplatePrintCss(templateId);
+    const html = renderTemplateExportHtml({ title: "测试", structuredResume, templateId });
+
+    assert.match(classes.page, /bg-white/);
+    assert.equal(typeof classes.accent, "string");
+    assert.match(css, /font-family/);
+    assert.match(html, new RegExp(`data-template="${templateId}"`));
+    assert.match(html, /&lt;AI&gt;/);
+  }
+});
+
+test("ATS flagship templates avoid complex sidebar export structures", () => {
+  for (const templateId of ["ats_chronological", "ats_compact_cn"]) {
+    const classes = getPreviewTemplateClasses(templateId);
+    const css = getTemplatePrintCss(templateId);
+    const html = renderTemplateExportHtml({ title: "测试", structuredResume, templateId });
+
+    assert.doesNotMatch(classes.body, /md:grid/);
+    assert.doesNotMatch(css, /grid-template-columns/);
+    assert.doesNotMatch(html, /class="sidebar"/);
+  }
 });
 
 test("view model is built from structured fields", () => {

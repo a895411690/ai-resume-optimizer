@@ -81,6 +81,10 @@ test("word template profiles map catalog layouts into export profiles", () => {
   assert.equal(getWordTemplateProfile("classic").layout, "single");
   assert.equal(getWordTemplateProfile("modern").isTwoColumn, true);
   assert.equal(getWordTemplateProfile("executive").isAccent, true);
+  assert.equal(getWordTemplateProfile("modern_product_data").isTwoColumn, true);
+  assert.equal(getWordTemplateProfile("tech_sidebar_pro").isTwoColumn, true);
+  assert.equal(getWordTemplateProfile("executive_impact").isAccent, true);
+  assert.equal(getWordTemplateProfile("expert_timeline").layout, "timeline");
   assert.equal(getWordTemplateProfile("missing").id, "classic");
 });
 
@@ -96,6 +100,26 @@ test("two-column templates build a table-based editable Word document", () => {
   assert.equal(doc.kind, "Document");
   assert.equal(children[0].kind, "Table");
   assert.equal(children[0].options.rows[0].options.children.length, 2);
+});
+
+test("market flagship templates build editable Word documents", () => {
+  for (const templateId of [
+    "ats_chronological",
+    "ats_compact_cn",
+    "modern_product_data",
+    "tech_sidebar_pro",
+    "executive_impact",
+    "expert_timeline",
+    "campus_project_plus",
+    "intern_clean_onepage",
+  ]) {
+    const doc = buildResumeWordDocument({ docx: fakeDocx, structuredResume, templateId });
+    const text = JSON.stringify(doc);
+
+    assert.equal(doc.kind, "Document");
+    assert.equal(text.includes("张三/产品"), true, templateId);
+    assert.equal(text.includes("工作/实习经历"), true, templateId);
+  }
 });
 
 test("single and accent templates keep resume sections in document body", () => {

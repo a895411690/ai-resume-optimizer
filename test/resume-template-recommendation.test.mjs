@@ -7,26 +7,56 @@ import {
   recommendResumeTemplates,
 } from "../src/lib/resume-template-recommendation.js";
 
-test("senior candidates are recommended the executive template first", () => {
+test("senior candidates are recommended the executive flagship template first", () => {
   const recommendations = recommendResumeTemplates({ userType: "senior", templates: RESUME_TEMPLATES });
 
-  assert.equal(recommendations[0].templateId, "executive");
+  assert.equal(recommendations[0].templateId, "executive_impact");
   assert.match(recommendations[0].reason, /中高级|管理|影响力/);
 });
 
-test("fresh graduates are recommended the classic template first", () => {
+test("fresh graduates are recommended the campus flagship template first", () => {
   const recommendations = recommendResumeTemplates({ userType: "fresh_graduate", templates: RESUME_TEMPLATES });
 
-  assert.equal(recommendations[0].templateId, "classic");
-  assert.match(recommendations[0].reason, /应届|校招|通用/);
+  assert.equal(recommendations[0].templateId, "campus_project_plus");
+  assert.match(recommendations[0].reason, /应届|校招|实习|校园/);
 });
 
-test("product data technology and operation roles are recommended the modern template first", () => {
+test("product data technology and operation roles are recommended the modern professional flagship first", () => {
   for (const targetRole of ["产品经理", "数据分析师", "技术运营", "用户运营"]) {
     const recommendations = recommendResumeTemplates({ userType: "junior", targetRole, templates: RESUME_TEMPLATES });
-    assert.equal(recommendations[0].templateId, "modern", targetRole);
-    assert.match(recommendations[0].reason, /产品|数据|技术|运营|信息密度/);
+    assert.equal(recommendations[0].templateId, "modern_product_data", targetRole);
+    assert.match(recommendations[0].reason, /产品|数据|技术|运营|现代专业|成果叙事/);
   }
+});
+
+test("market family recommendations prioritize ATS modern executive and campus needs", () => {
+  assert.equal(
+    recommendResumeTemplates({ userType: "junior", targetRole: "外企 ATS 网申 海投", templates: RESUME_TEMPLATES })[0].templateId,
+    "ats_chronological",
+  );
+  assert.equal(
+    recommendResumeTemplates({ userType: "junior", targetRole: "数据产品经理", templates: RESUME_TEMPLATES })[0].templateId,
+    "modern_product_data",
+  );
+  assert.equal(
+    recommendResumeTemplates({ userType: "senior", targetRole: "业务负责人 总监", templates: RESUME_TEMPLATES })[0].templateId,
+    "executive_impact",
+  );
+  assert.equal(
+    recommendResumeTemplates({ userType: "fresh_graduate", targetRole: "校招 实习 产品助理", templates: RESUME_TEMPLATES })[0].templateId,
+    "campus_project_plus",
+  );
+});
+
+test("recommendation context includes template family matching keywords", () => {
+  const recommendations = recommendResumeTemplates({
+    userType: "career_switcher",
+    targetRole: "技术转行 数据分析 网申",
+    templates: RESUME_TEMPLATES,
+  }).slice(0, 5);
+
+  assert.ok(recommendations.some((item) => item.templateId === "ats_chronological"));
+  assert.ok(recommendations.some((item) => item.templateId === "modern_product_data"));
 });
 
 test("recommendations never return template ids outside the catalog", () => {

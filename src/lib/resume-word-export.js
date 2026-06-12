@@ -17,7 +17,8 @@ function getWordTemplateProfile(templateId) {
     id,
     layout,
     accent,
-    isTwoColumn: layout === "two-column",
+    isTwoColumn: layout === "two-column" || layout === "sidebar-right",
+    isSidebarRight: layout === "sidebar-right",
     isAccent: layout === "single-accent",
     titleAlignment: layout === "single" ? "center" : "left",
   };
@@ -137,15 +138,21 @@ function buildResumeWordDocument({ docx, structuredResume, templateId }) {
       ...sectionChildren(docx, skillSections, profile),
     ];
     const main = sectionChildren(docx, mainSections, profile);
+    const cells = profile.isSidebarRight
+      ? [
+        new TableCell({ width: { size: 70, type: WidthType.PERCENTAGE }, children: main }),
+        new TableCell({ width: { size: 30, type: WidthType.PERCENTAGE }, children: sidebar }),
+      ]
+      : [
+        new TableCell({ width: { size: 30, type: WidthType.PERCENTAGE }, children: sidebar }),
+        new TableCell({ width: { size: 70, type: WidthType.PERCENTAGE }, children: main }),
+      ];
     const table = new Table({
       width: { size: 100, type: WidthType.PERCENTAGE },
       borders: noBorder(BorderStyle),
       rows: [
         new TableRow({
-          children: [
-            new TableCell({ width: { size: 30, type: WidthType.PERCENTAGE }, children: sidebar }),
-            new TableCell({ width: { size: 70, type: WidthType.PERCENTAGE }, children: main }),
-          ],
+          children: cells,
         }),
       ],
     });

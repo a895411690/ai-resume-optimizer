@@ -23,8 +23,9 @@ test("resume preview uses compact mobile sizing before A4 desktop sizing", () =>
   const renderingSource = readFileSync(new URL("../src/lib/resume-template-rendering.js", import.meta.url), "utf8");
 
   assert.match(source, /h-full min-w-0 overflow-auto/);
-  assert.match(renderingSource, /mx-auto min-w-0 bg-white p-4/);
-  assert.match(renderingSource, /md:max-w-\[794px\] md:p-12/);
+  assert.match(renderingSource, /pagePadding: compact \? "p-3 sm:p-6 md:p-9" : spacious \? "p-5 sm:p-9 md:p-14" : "p-4 sm:p-8 md:p-12"/);
+  assert.match(renderingSource, /mx-auto min-w-0 bg-white \$\{theme\.pagePadding\}/);
+  assert.match(renderingSource, /md:max-w-\[794px\]/);
   assert.match(renderingSource, /lg:min-h-\[1123px\]/);
   assert.match(renderingSource, /md:grid md:grid-cols-\[210px_minmax\(0,1fr\)\]/);
   assert.match(source, /break-words text-xl/);
