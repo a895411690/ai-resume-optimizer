@@ -28,6 +28,14 @@ ALTER TABLE public.payment_orders
   ADD COLUMN IF NOT EXISTS credits_granted INTEGER NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS lifetime_vip_granted BOOLEAN NOT NULL DEFAULT false;
 
+ALTER TABLE public.payment_orders
+  ALTER COLUMN product_code DROP DEFAULT,
+  ALTER COLUMN product_code DROP NOT NULL;
+
+UPDATE public.payment_orders
+SET product_code = NULL
+WHERE product_code = '';
+
 DO $$
 BEGIN
   IF NOT EXISTS (
