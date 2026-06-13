@@ -20,6 +20,7 @@ const structuredResume = {
 const customOrderedResume = {
   ...structuredResume,
   education: [{ school: "A大学", degree: "本科", major: "计算机", time_range: "2018-2022", courses: [], honors: [] }],
+  projects: [{ project_name: "增长平台", role: "负责人", project_intro: "搭建投放分析平台", duty: "负责指标体系和需求推进", achievement: ["转化率提升 20%"] }],
   skills: { skill_hard: ["Axure"], skill_soft: [], skill_level: [], certificate_list: ["PMP"] },
   optional: {
     campus_exp: ["学生会负责人"],
@@ -97,7 +98,34 @@ test("editor section order moves optional information as one display group", () 
   const view = buildStructuredResumeViewModel(customOrderedResume);
   const titles = view.sections.map((section) => section.title);
 
-  assert.deepEqual(titles.slice(0, 6), ["自我评价", "校园经历", "团队管理", "工作/实习经历", "专业技能", "技能证书"]);
+  assert.deepEqual(titles.slice(0, 6), ["自我评价", "校园经历", "团队管理", "工作/实习经历", "项目经历", "专业技能"]);
+});
+
+test("template content priority is used when the user has not customized section order", () => {
+  const resume = {
+    ...customOrderedResume,
+    meta: { source: "test", warnings: [] },
+  };
+
+  const campus = buildStructuredResumeViewModel(resume, "campus_project_plus");
+  const executive = buildStructuredResumeViewModel(resume, "executive_impact");
+  const modern = buildStructuredResumeViewModel(resume, "modern_product_data");
+
+  assert.deepEqual(campus.sections.slice(0, 3).map((section) => section.title), ["项目经历", "教育经历", "校园经历"]);
+  assert.deepEqual(executive.sections.slice(0, 3).map((section) => section.title), ["自我评价", "团队管理", "工作/实习经历"]);
+  assert.deepEqual(modern.sections.slice(0, 4).map((section) => section.title), ["专业技能", "技能证书", "工作/实习经历", "项目经历"]);
+});
+
+test("density and template metadata are exposed to preview and PDF export themes", () => {
+  const compactClasses = getPreviewTemplateClasses("ats_compact_cn");
+  const spaciousClasses = getPreviewTemplateClasses("executive_impact");
+  const html = renderTemplateExportHtml({ title: "测试", structuredResume, templateId: "ats_compact_cn" });
+
+  assert.match(compactClasses.bullet, /text-\[12px\]/);
+  assert.match(spaciousClasses.bullet, /text-\[13px\]/);
+  assert.match(html, /data-density="compact"/);
+  assert.match(html, /data-ats-level="high"/);
+  assert.match(html, /data-family="ats"/);
 });
 
 test("export html follows editor section order for optional information", () => {

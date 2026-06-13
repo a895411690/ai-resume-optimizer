@@ -88,6 +88,12 @@ test("market flagship templates map to the selected four families", () => {
   assert.equal(byId.get("intern_clean_onepage").family, "campus_intern");
 });
 
+test("high ATS templates keep layouts linear and export friendly", () => {
+  for (const template of RESUME_TEMPLATES.filter((item) => item.atsLevel === "high")) {
+    assert.ok(!["timeline", "infographic", "sidebar-right"].includes(template.layout), `${template.id} should stay linear`);
+  }
+});
+
 test("unknown template ids fall back to the classic template", () => {
   assert.equal(normalizeResumeTemplateId("missing"), "classic");
   assert.equal(getResumeTemplate("missing").id, "classic");

@@ -114,7 +114,7 @@ function buildResumeWordDocument({ docx, structuredResume, templateId }) {
   } = docx;
   const profile = getWordTemplateProfile(templateId);
   const resume = normalizeStructuredResumeV1(structuredResume);
-  const view = buildStructuredResumeViewModel(resume);
+  const view = buildStructuredResumeViewModel(resume, templateId);
   const titleAlignment = profile.titleAlignment === "center" ? AlignmentType.CENTER : AlignmentType.LEFT;
   const title = new Paragraph({
     children: [textRun(TextRun, view.title, { bold: true, size: 34, color: profile.isAccent ? profile.accent : "111827" })],

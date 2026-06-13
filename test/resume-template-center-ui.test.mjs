@@ -10,6 +10,11 @@ test("template center component exposes search filters recommendations and selec
   assert.match(source, /推荐理由/);
   assert.match(source, /推荐人群/);
   assert.match(source, /模板优势/);
+  assert.match(source, /ATS 等级/);
+  assert.match(source, /版式密度/);
+  assert.match(source, /适合渠道/);
+  assert.match(source, /SAMPLE_TEMPLATE_PREVIEW_RESUME/);
+  assert.match(source, /buildStructuredResumeViewModel/);
   assert.match(source, /marketTags/);
   assert.match(source, /family/);
   assert.match(source, /最近使用/);

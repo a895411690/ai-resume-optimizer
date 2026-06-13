@@ -19,7 +19,7 @@ function titleLine(parts) {
   return compact(parts).join("｜");
 }
 
-function resolveDisplaySectionOrder(sectionOrder) {
+function resolveDisplaySectionOrder(sectionOrder, templatePriority = []) {
   const defaultOrder = ["self_evaluation", "education", "work", "projects", "skills", "certificates", "campus_exp", "manage_exp"];
   const editorSectionMap = {
     basics: [],
@@ -29,7 +29,9 @@ function resolveDisplaySectionOrder(sectionOrder) {
     skills: ["skills", "certificates"],
     optional: ["self_evaluation", "campus_exp", "manage_exp"],
   };
-  const sourceOrder = Array.isArray(sectionOrder) ? sectionOrder : defaultOrder;
+  const sourceOrder = Array.isArray(sectionOrder) && sectionOrder.length
+    ? sectionOrder
+    : (Array.isArray(templatePriority) && templatePriority.length ? templatePriority : defaultOrder);
   const resolved = [];
 
   for (const key of sourceOrder) {
@@ -42,8 +44,9 @@ function resolveDisplaySectionOrder(sectionOrder) {
   return [...resolved, ...defaultOrder.filter((key) => !resolved.includes(key))];
 }
 
-function buildStructuredResumeViewModel(value) {
+function buildStructuredResumeViewModel(value, templateId) {
   const resume = normalizeStructuredResumeV1(value);
+  const template = templateId ? getResumeTemplate(normalizeResumeTemplateId(templateId)) : null;
   const skills = [...resume.skills.skill_hard, ...resume.skills.skill_soft, ...resume.skills.skill_level];
 
   // Build all sections keyed by their logical name
@@ -76,7 +79,7 @@ function buildStructuredResumeViewModel(value) {
     manage_exp: resume.optional.manage_exp.length ? { title: "团队管理", items: resume.optional.manage_exp.map((item) => ({ heading: "", bullets: [item] })) } : null,
   };
 
-  const fullOrder = resolveDisplaySectionOrder(resume.meta?.sectionOrder);
+  const fullOrder = resolveDisplaySectionOrder(resume.meta?.sectionOrder, template?.contentPriority || []);
   const sections = fullOrder.map((key) => sectionMap[key]).filter(Boolean);
 
   return {
@@ -94,8 +97,12 @@ function getTemplateTheme(template) {
   return {
     density,
     pagePadding: compact ? "p-3 sm:p-6 md:p-9" : spacious ? "p-5 sm:p-9 md:p-14" : "p-4 sm:p-8 md:p-12",
-    sectionTop: compact ? "mt-4 sm:mt-5" : spacious ? "mt-6 sm:mt-7" : "mt-5 sm:mt-6",
-    sectionTitle: compact ? "text-sm sm:text-base" : "text-base sm:text-lg",
+    sectionTop: compact ? "mt-3 sm:mt-4" : spacious ? "mt-7 sm:mt-8" : "mt-5 sm:mt-6",
+    sectionTitle: compact ? "text-[13px] sm:text-sm" : spacious ? "text-lg sm:text-xl" : "text-base sm:text-lg",
+    itemSpacing: compact ? "space-y-2" : spacious ? "space-y-4" : "space-y-3",
+    heading: compact ? "mb-1 mt-2 break-words text-[12px] font-semibold text-gray-700 sm:text-sm" : spacious ? "mb-3 mt-4 break-words text-base font-semibold text-gray-700 sm:text-lg" : "mb-2 mt-3 break-words text-sm font-semibold text-gray-700 sm:text-base",
+    bulletList: compact ? "mb-2 space-y-0.5" : spacious ? "mb-4 space-y-1.5" : "mb-3 space-y-1",
+    bullet: compact ? "ml-4 break-words text-[12px] leading-snug text-gray-700 list-disc" : spacious ? "ml-4 break-words text-[13px] leading-7 text-gray-700 list-disc" : "ml-4 break-words text-gray-700 list-disc",
     printMargin: compact ? 28 : spacious ? 48 : 40,
     printPadding: compact ? 16 : spacious ? 24 : 20,
     printFontSize: compact ? 12 : spacious ? 13.5 : 13,
@@ -119,6 +126,10 @@ function getPreviewTemplateClasses(templateId) {
       main: "min-w-0 p-4 sm:p-8 md:p-10",
       sidebar: "border-b bg-slate-50 p-4 text-xs sm:p-6 md:border-b-0 md:text-slate-100",
       sectionTitle: `${sectionTitle} border-gray-300`,
+      itemSpacing: theme.itemSpacing,
+      heading: theme.heading,
+      bulletList: theme.bulletList,
+      bullet: theme.bullet,
       accent,
     };
   }
@@ -130,6 +141,10 @@ function getPreviewTemplateClasses(templateId) {
       main: "",
       sidebar: "",
       sectionTitle: `${sectionTitle} uppercase`,
+      itemSpacing: theme.itemSpacing,
+      heading: theme.heading,
+      bulletList: theme.bulletList,
+      bullet: theme.bullet,
       accent,
     };
   }
@@ -141,6 +156,10 @@ function getPreviewTemplateClasses(templateId) {
       main: "",
       sidebar: "",
       sectionTitle,
+      itemSpacing: theme.itemSpacing,
+      heading: theme.heading,
+      bulletList: theme.bulletList,
+      bullet: theme.bullet,
       accent,
     };
   }
@@ -152,6 +171,10 @@ function getPreviewTemplateClasses(templateId) {
       main: "mt-6",
       sidebar: "",
       sectionTitle,
+      itemSpacing: theme.itemSpacing,
+      heading: theme.heading,
+      bulletList: theme.bulletList,
+      bullet: theme.bullet,
       accent,
     };
   }
@@ -163,6 +186,10 @@ function getPreviewTemplateClasses(templateId) {
       main: "min-w-0 p-4 sm:p-8 md:p-10",
       sidebar: "border-b bg-slate-50 p-4 text-xs sm:p-6 md:border-b-0 md:text-slate-100",
       sectionTitle: `${sectionTitle} border-gray-300`,
+      itemSpacing: theme.itemSpacing,
+      heading: theme.heading,
+      bulletList: theme.bulletList,
+      bullet: theme.bullet,
       accent,
     };
   }
@@ -173,6 +200,10 @@ function getPreviewTemplateClasses(templateId) {
     main: "",
     sidebar: "",
     sectionTitle,
+    itemSpacing: theme.itemSpacing,
+    heading: theme.heading,
+    bulletList: theme.bulletList,
+    bullet: theme.bullet,
     accent,
   };
 }
@@ -215,7 +246,7 @@ function renderTemplateExportHtml({ title, structuredResume, templateId }) {
   const template = getResumeTemplate(normalizeResumeTemplateId(templateId));
   const id = template.id;
   const layout = template.layout;
-  const view = buildStructuredResumeViewModel(structuredResume);
+  const view = buildStructuredResumeViewModel(structuredResume, id);
   const documentTitle = title || view.title;
   const contact = view.contactItems.length ? `<div class="contact">${view.contactItems.map(escapeHtml).join(" · ")}</div>` : "";
   const skills = view.skills.length ? `<div class="skills"><h2>专业技能</h2><ul>${view.skills.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : "";
@@ -243,7 +274,7 @@ function renderTemplateExportHtml({ title, structuredResume, templateId }) {
     body = `<header><h1>${escapeHtml(view.title)}</h1>${contact}</header><main>${view.sections.map(renderSectionHtml).join("")}</main>`;
   }
 
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(documentTitle)}</title><style>${getTemplatePrintCss(id)}</style></head><body data-template="${id}">${body}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(documentTitle)}</title><style>${getTemplatePrintCss(id)}</style></head><body data-template="${id}" data-density="${escapeHtml(template.density)}" data-ats-level="${escapeHtml(template.atsLevel)}" data-family="${escapeHtml(template.family)}">${body}</body></html>`;
 }
 
 module.exports = {

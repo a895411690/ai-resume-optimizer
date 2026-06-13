@@ -12,20 +12,38 @@ interface Props {
 type ResumeViewSection = { title: string; items: Array<{ heading: string; bullets: string[] }> };
 type ResumeViewModel = { title: string; contactItems: string[]; skills: string[]; sections: ResumeViewSection[] };
 
-function SectionList({ sections, sectionTitleClass, accentColor, isSingleAccent }: { sections: Array<{ title: string; items: Array<{ heading: string; bullets: string[] }> }>; sectionTitleClass: string; accentColor: string; isSingleAccent: boolean }) {
+function SectionList({
+  sections,
+  sectionTitleClass,
+  accentColor,
+  isSingleAccent,
+  itemSpacingClass,
+  headingClass,
+  bulletListClass,
+  bulletClass,
+}: {
+  sections: Array<{ title: string; items: Array<{ heading: string; bullets: string[] }> }>;
+  sectionTitleClass: string;
+  accentColor: string;
+  isSingleAccent: boolean;
+  itemSpacingClass: string;
+  headingClass: string;
+  bulletListClass: string;
+  bulletClass: string;
+}) {
   return (
     <>
       {sections.map((section) => (
         <section key={section.title} className="break-inside-avoid">
           <h2 className={sectionTitleClass} style={isSingleAccent ? { color: accentColor, borderBottomColor: accentColor } : { borderBottomColor: accentColor }}>{section.title}</h2>
-          <div className="space-y-3">
+          <div className={itemSpacingClass}>
             {section.items.map((item, index) => (
               <div key={`${section.title}-${item.heading}-${index}`}>
-                {item.heading && <h3 className="mb-2 mt-3 break-words text-sm font-semibold text-gray-700 sm:text-base">{item.heading}</h3>}
+                {item.heading && <h3 className={headingClass}>{item.heading}</h3>}
                 {item.bullets.length > 0 && (
-                  <ul className="mb-3 space-y-1">
+                  <ul className={bulletListClass}>
                     {item.bullets.map((bullet, bulletIndex) => (
-                      <li key={`${bullet}-${bulletIndex}`} className="ml-4 break-words text-gray-700 list-disc">{bullet}</li>
+                      <li key={`${bullet}-${bulletIndex}`} className={bulletClass}>{bullet}</li>
                     ))}
                   </ul>
                 )}
@@ -39,7 +57,7 @@ function SectionList({ sections, sectionTitleClass, accentColor, isSingleAccent 
 }
 
 export function ResumePreview({ structuredResume, title, templateId }: Props) {
-  const layout = buildStructuredResumeViewModel(structuredResume) as ResumeViewModel;
+  const layout = buildStructuredResumeViewModel(structuredResume, templateId) as ResumeViewModel;
   const classes = getPreviewTemplateClasses(templateId);
   const template = getResumeTemplate(normalizeResumeTemplateId(templateId));
   const accent = template.preview.accent;
@@ -53,7 +71,7 @@ export function ResumePreview({ structuredResume, title, templateId }: Props) {
         {template.layout === "sidebar-right" ? (
           <div className={classes.body}>
             <main className={classes.main}>
-              <SectionList sections={nonSkillSections} sectionTitleClass={classes.sectionTitle} accentColor={accent} isSingleAccent={false} />
+              <SectionList sections={nonSkillSections} sectionTitleClass={classes.sectionTitle} accentColor={accent} isSingleAccent={false} itemSpacingClass={classes.itemSpacing} headingClass={classes.heading} bulletListClass={classes.bulletList} bulletClass={classes.bullet} />
             </main>
             <aside className={classes.sidebar} style={{ backgroundColor: accent }}>
               <header className="mb-5">
@@ -95,7 +113,7 @@ export function ResumePreview({ structuredResume, title, templateId }: Props) {
               )}
             </aside>
             <main className={classes.main}>
-              <SectionList sections={nonSkillSections} sectionTitleClass={classes.sectionTitle} accentColor={accent} isSingleAccent={false} />
+              <SectionList sections={nonSkillSections} sectionTitleClass={classes.sectionTitle} accentColor={accent} isSingleAccent={false} itemSpacingClass={classes.itemSpacing} headingClass={classes.heading} bulletListClass={classes.bulletList} bulletClass={classes.bullet} />
             </main>
           </div>
         ) : template.layout === "timeline" ? (
@@ -116,11 +134,11 @@ export function ResumePreview({ structuredResume, title, templateId }: Props) {
                     {section.items.map((item, index) => (
                       <div key={`${section.title}-${item.heading}-${index}`} className="relative border-l-2 pl-4" style={{ borderColor: accent }}>
                         <div className="absolute -left-[5px] top-1.5 h-2.5 w-2.5 rounded-full" style={{ backgroundColor: accent }} />
-                        {item.heading && <h3 className="mb-2 mt-3 break-words text-sm font-semibold text-gray-700 sm:text-base">{item.heading}</h3>}
+                        {item.heading && <h3 className={classes.heading}>{item.heading}</h3>}
                         {item.bullets.length > 0 && (
-                          <ul className="mb-3 space-y-1">
+                          <ul className={classes.bulletList}>
                             {item.bullets.map((bullet, bulletIndex) => (
-                              <li key={`${bullet}-${bulletIndex}`} className="ml-4 break-words text-gray-700 list-disc">{bullet}</li>
+                              <li key={`${bullet}-${bulletIndex}`} className={classes.bullet}>{bullet}</li>
                             ))}
                           </ul>
                         )}
@@ -149,7 +167,7 @@ export function ResumePreview({ structuredResume, title, templateId }: Props) {
               )}
             </div>
             <div className={classes.main}>
-              <SectionList sections={layout.sections} sectionTitleClass={classes.sectionTitle} accentColor={accent} isSingleAccent={false} />
+              <SectionList sections={layout.sections} sectionTitleClass={classes.sectionTitle} accentColor={accent} isSingleAccent={false} itemSpacingClass={classes.itemSpacing} headingClass={classes.heading} bulletListClass={classes.bulletList} bulletClass={classes.bullet} />
             </div>
           </div>
         ) : (
@@ -162,7 +180,7 @@ export function ResumePreview({ structuredResume, title, templateId }: Props) {
                 </div>
               )}
             </header>
-            <SectionList sections={layout.sections} sectionTitleClass={classes.sectionTitle} accentColor={accent} isSingleAccent={isSingleAccent} />
+            <SectionList sections={layout.sections} sectionTitleClass={classes.sectionTitle} accentColor={accent} isSingleAccent={isSingleAccent} itemSpacingClass={classes.itemSpacing} headingClass={classes.heading} bulletListClass={classes.bulletList} bulletClass={classes.bullet} />
           </>
         )}
       </div>

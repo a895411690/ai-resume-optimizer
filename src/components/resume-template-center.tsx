@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { buildStructuredResumeViewModel } from "@/lib/resume-template-rendering.js";
 import { RESUME_TEMPLATES } from "@/lib/resume-templates.js";
 import { recommendResumeTemplates } from "@/lib/resume-template-recommendation.js";
 
@@ -38,6 +39,23 @@ const MARKET_TEMPLATE_IDS = [
 ];
 const MARKET_TEMPLATE_ORDER = new Map(MARKET_TEMPLATE_IDS.map((id, index) => [id, index]));
 const RECENT_STORAGE_KEY = "resume-template-center-recent";
+const ATS_LABELS: Record<string, string> = { high: "高", medium: "中", low: "低" };
+const DENSITY_LABELS: Record<string, string> = { compact: "紧凑", balanced: "均衡", spacious: "舒展" };
+const FAMILY_CHANNELS: Record<string, string> = {
+  ats: "网申 / 海投",
+  modern_professional: "社招 / 专业岗",
+  executive_expert: "管理 / 专家岗",
+  campus_intern: "校招 / 实习",
+};
+const SAMPLE_TEMPLATE_PREVIEW_RESUME = {
+  basics: { name: "王小禾", phone: "13800138000", email: "hello@example.com", location: "上海", job_target: "产品经理" },
+  education: [{ school: "华东理工大学", degree: "本科", major: "信息管理", time_range: "2019-2023", courses: ["数据分析", "产品设计"], honors: ["校级奖学金"] }],
+  work: [{ company: "某科技公司", position: "产品实习生", time_range: "2023.07-2024.06", job_content: "负责增长工具需求梳理", job_result: ["推动转化率提升 18%", "协同研发上线 3 个核心功能"] }],
+  projects: [{ project_name: "校园招聘系统优化", role: "项目负责人", project_intro: "重构候选人筛选流程", duty: "设计数据看板并推动 AB 实验", achievement: ["简历筛选效率提升 35%"] }],
+  skills: { skill_hard: ["SQL", "Axure", "数据看板"], skill_soft: ["跨团队协作"], skill_level: [], certificate_list: ["CET-6"] },
+  optional: { campus_exp: ["学生会运营负责人"], self_evaluation: ["结果导向，擅长用数据拆解问题"], manage_exp: ["带领 5 人项目小组"], political_status: "" },
+  meta: { source: "template-preview", warnings: [] },
+};
 
 function includesQuery(values: string[], query: string) {
   if (!query) return true;
@@ -46,111 +64,69 @@ function includesQuery(values: string[], query: string) {
 
 function renderTemplatePreview(template: (typeof RESUME_TEMPLATES)[number]) {
   const accent = template.preview.accent;
-  const isTwoColumn = template.preview.layout === "two-column";
+  const view = buildStructuredResumeViewModel(SAMPLE_TEMPLATE_PREVIEW_RESUME, template.id);
+  const sections = view.sections.slice(0, template.density === "compact" ? 4 : 3);
+  const isTwoColumn = template.preview.layout === "two-column" || template.preview.layout === "sidebar-right";
   const isAccent = template.preview.layout === "single-accent";
-  return (
-    <div className="w-full rounded bg-white p-3 shadow-sm" style={{ minHeight: 100 }}>
-      {template.preview.layout === "timeline" ? (
-        <>
-          <div className="mx-auto h-2 w-14 rounded bg-slate-800" />
-          <div className="mx-auto mt-1 h-1.5 w-20 rounded bg-slate-200" />
-          <div className="mt-2 ml-2 border-l-2 space-y-2 pl-3" style={{ borderColor: accent }}>
-            <div>
-              <div className="h-1.5 w-10 rounded bg-slate-300" style={{ position: "relative" }}>
-                <div className="absolute -left-[7px] top-[-2px] h-2 w-2 rounded-full" style={{ backgroundColor: accent }} />
-              </div>
-              <div className="mt-0.5 h-1.5 w-full rounded bg-slate-200" />
-              <div className="mt-0.5 h-1.5 w-4/5 rounded bg-slate-200" />
-            </div>
-            <div>
-              <div className="h-1.5 w-12 rounded bg-slate-300" style={{ position: "relative" }}>
-                <div className="absolute -left-[7px] top-[-2px] h-2 w-2 rounded-full" style={{ backgroundColor: accent }} />
-              </div>
-              <div className="mt-0.5 h-1.5 w-full rounded bg-slate-200" />
-              <div className="mt-0.5 h-1.5 w-2/3 rounded bg-slate-200" />
-            </div>
-          </div>
-        </>
-      ) : template.preview.layout === "infographic" ? (
-        <>
-          <div className="rounded px-3 py-2 text-center" style={{ backgroundColor: accent }}>
-            <div className="mx-auto h-2 w-14 rounded bg-white/60" />
-            <div className="mt-1.5 flex flex-wrap justify-center gap-1">
-              <div className="h-1.5 w-8 rounded-full bg-white/30" />
-              <div className="h-1.5 w-10 rounded-full bg-white/30" />
-              <div className="h-1.5 w-7 rounded-full bg-white/30" />
-              <div className="h-1.5 w-9 rounded-full bg-white/30" />
-            </div>
-          </div>
-          <div className="mt-2 space-y-1">
-            <div className="h-1.5 w-full rounded bg-slate-200" />
-            <div className="h-1.5 w-4/5 rounded bg-slate-200" />
-            <div className="h-1.5 w-full rounded bg-slate-200" />
-            <div className="h-1.5 w-2/3 rounded bg-slate-200" />
-          </div>
-        </>
-      ) : template.preview.layout === "sidebar-right" ? (
-        <div className="grid grid-cols-[1fr_38px] gap-1.5">
-          <div className="space-y-1">
-            <div className="h-2 w-12 rounded bg-slate-800" />
-            <div className="h-1.5 rounded bg-slate-200" />
-            <div className="h-1.5 w-4/5 rounded bg-slate-200" />
-            <div className="h-1.5 rounded bg-slate-200" />
-            <div className="h-1.5 w-2/3 rounded bg-slate-200" />
-          </div>
-          <div className="space-y-1">
-            <div className="h-7 rounded" style={{ backgroundColor: accent }} />
-            <div className="h-1.5 rounded bg-slate-300" />
-            <div className="h-1.5 rounded bg-slate-300" />
-            <div className="h-1.5 rounded bg-slate-300" />
+  const isTimeline = template.preview.layout === "timeline";
+  const isInfographic = template.preview.layout === "infographic";
+  const body = (
+    <div className="min-w-0 space-y-1.5">
+      {sections.map((section: { title: string; items: Array<{ heading: string; bullets: string[] }> }) => (
+        <div key={section.title} className={isTimeline ? "border-l-2 pl-2" : ""} style={isTimeline ? { borderColor: accent } : undefined}>
+          <p className="truncate text-[8px] font-bold uppercase tracking-wide" style={{ color: accent }}>{section.title}</p>
+          <p className="mt-0.5 truncate text-[7px] font-medium text-slate-700">{section.items[0]?.heading || section.items[0]?.bullets[0] || "核心经历"}</p>
+          <div className="mt-0.5 space-y-0.5">
+            {(section.items[0]?.bullets || []).slice(0, 2).map((bullet: string, index: number) => (
+              <p key={`${section.title}-${index}`} className="truncate text-[7px] leading-tight text-slate-500">- {bullet}</p>
+            ))}
           </div>
         </div>
-      ) : isAccent ? (
-        <>
-          <div className="flex items-center gap-2">
-            <div className="h-5 w-1 rounded" style={{ backgroundColor: accent }} />
-            <div className="h-2 w-14 rounded bg-slate-800" />
-          </div>
-          <div className="mt-1.5 ml-3 h-1.5 w-20 rounded bg-slate-200" />
-          <div className="mt-2 h-1.5 rounded" style={{ backgroundColor: accent, opacity: 0.15 }} />
-          <div className="mt-1.5 space-y-1">
-            <div className="h-1.5 w-full rounded bg-slate-200" />
-            <div className="h-1.5 w-4/5 rounded bg-slate-200" />
-            <div className="h-1.5 w-full rounded bg-slate-200" />
-            <div className="h-1.5 w-2/3 rounded bg-slate-200" />
-          </div>
-        </>
-      ) : isTwoColumn ? (
-        <div className="grid grid-cols-[38px_1fr] gap-1.5">
-          <div className="space-y-1">
-            <div className="h-7 rounded" style={{ backgroundColor: accent }} />
-            <div className="h-1.5 rounded bg-slate-300" />
-            <div className="h-1.5 rounded bg-slate-300" />
-            <div className="h-1.5 rounded bg-slate-300" />
-          </div>
-          <div className="space-y-1">
-            <div className="h-2 w-12 rounded bg-slate-800" />
-            <div className="h-1.5 rounded bg-slate-200" />
-            <div className="h-1.5 w-4/5 rounded bg-slate-200" />
-            <div className="h-1.5 rounded bg-slate-200" />
-            <div className="h-1.5 w-2/3 rounded bg-slate-200" />
-          </div>
+      ))}
+    </div>
+  );
+
+  return (
+    <div className="w-full overflow-hidden rounded bg-white p-2 text-left shadow-sm" style={{ minHeight: 100 }}>
+      <div className={isInfographic ? "rounded px-2 py-1.5 text-center text-white" : isAccent ? "border-l-2 pl-2" : "border-b pb-1.5 text-center"} style={isInfographic ? { backgroundColor: accent } : isAccent ? { borderColor: accent } : { borderColor: accent }}>
+        <p className={`truncate text-[10px] font-bold ${isInfographic ? "text-white" : "text-slate-900"}`}>{view.title}</p>
+        <p className={`mt-0.5 truncate text-[7px] ${isInfographic ? "text-white/80" : "text-slate-500"}`}>{view.contactItems.slice(1, 3).join(" · ")}</p>
+      </div>
+      {isTwoColumn ? (
+        <div className={`mt-2 grid gap-2 ${template.preview.layout === "sidebar-right" ? "grid-cols-[1fr_42px]" : "grid-cols-[42px_1fr]"}`}>
+          {template.preview.layout !== "sidebar-right" && (
+            <div className="rounded p-1.5 text-white" style={{ backgroundColor: accent }}>
+              <p className="text-[7px] font-bold">技能</p>
+              {view.skills.slice(0, 4).map((skill: string) => <p className="mt-1 truncate text-[7px] text-white/85" key={skill}>{skill}</p>)}
+            </div>
+          )}
+          {body}
+          {template.preview.layout === "sidebar-right" && (
+            <div className="rounded p-1.5 text-white" style={{ backgroundColor: accent }}>
+              <p className="text-[7px] font-bold">技能</p>
+              {view.skills.slice(0, 4).map((skill: string) => <p className="mt-1 truncate text-[7px] text-white/85" key={skill}>{skill}</p>)}
+            </div>
+          )}
         </div>
       ) : (
-        <>
-          <div className="mx-auto h-2 w-14 rounded bg-slate-800" />
-          <div className="mx-auto mt-1 h-1.5 w-20 rounded bg-slate-200" />
-          <div className="mt-2 h-1.5 rounded" style={{ backgroundColor: accent, opacity: 0.2 }} />
-          <div className="mt-1.5 space-y-1">
-            <div className="h-1.5 w-full rounded bg-slate-200" />
-            <div className="h-1.5 w-4/5 rounded bg-slate-200" />
-            <div className="h-1.5 w-full rounded bg-slate-200" />
-            <div className="h-1.5 w-2/3 rounded bg-slate-200" />
-          </div>
-        </>
+        <div className="mt-2">
+          {isInfographic && (
+            <div className="mb-1.5 flex flex-wrap gap-1">
+              {view.skills.slice(0, 3).map((skill: string) => <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[7px] text-slate-600" key={skill}>{skill}</span>)}
+            </div>
+          )}
+          {body}
+        </div>
       )}
     </div>
   );
+}
+
+function templateDecisionReason(template: (typeof RESUME_TEMPLATES)[number], recommendation: string | undefined) {
+  const ats = `ATS 等级${ATS_LABELS[template.atsLevel] || template.atsLevel}`;
+  const density = `版式${DENSITY_LABELS[template.density] || template.density}`;
+  const priority = template.contentPriority.slice(0, 3).join(" / ");
+  return `${recommendation || "适合当前简历结构和求职方向。"} ${ats}，${density}，优先呈现 ${priority}。`;
 }
 
 export function ResumeTemplateCenter({ open, value, userType, targetRole, structuredResume, onOpenChange, onSelect }: ResumeTemplateCenterProps) {
@@ -264,12 +240,26 @@ export function ResumeTemplateCenter({ open, value, userType, targetRole, struct
                   <div className="mt-2 flex flex-wrap gap-1">
                     {template.marketTags.map((tag: string) => <span key={tag} className="rounded border border-emerald-100 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">{tag}</span>)}
                   </div>
+                  <div className="mt-3 grid grid-cols-3 gap-1.5 text-[10px] text-slate-600">
+                    <div className="rounded border bg-slate-50 px-1.5 py-1">
+                      <span className="block text-slate-400">ATS 等级</span>
+                      <span className="font-semibold text-slate-800">{ATS_LABELS[template.atsLevel] || template.atsLevel}</span>
+                    </div>
+                    <div className="rounded border bg-slate-50 px-1.5 py-1">
+                      <span className="block text-slate-400">版式密度</span>
+                      <span className="font-semibold text-slate-800">{DENSITY_LABELS[template.density] || template.density}</span>
+                    </div>
+                    <div className="rounded border bg-slate-50 px-1.5 py-1">
+                      <span className="block text-slate-400">适合渠道</span>
+                      <span className="font-semibold text-slate-800">{FAMILY_CHANNELS[template.family] || "通用投递"}</span>
+                    </div>
+                  </div>
                   <p className="mt-3 text-[11px] text-slate-600">适配场景：{template.scenarios.join("、")}</p>
                   <p className="mt-1 text-[11px] text-slate-600">推荐人群：{template.audience.join("、")}</p>
                   <p className="mt-1 text-[11px] text-slate-600">模板优势：{template.strengths.join("、")}</p>
                   <p className="mt-2 flex items-start gap-1 text-[11px] text-blue-700">
                     <Sparkles className="mt-0.5 h-3 w-3 flex-shrink-0" />
-                    <span><span className="font-semibold">推荐理由：</span>{recommendationById.get(template.id) || "适合当前简历结构和求职方向。"}</span>
+                    <span><span className="font-semibold">推荐理由：</span>{templateDecisionReason(template, recommendationById.get(template.id))}</span>
                   </p>
                   <Button className="mt-4 h-8 text-xs" type="button" variant={selected ? "secondary" : "default"} onClick={() => selectTemplate(template.id)}>
                     {selected ? "继续使用" : "选用模板"}
