@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { DEFAULT_PAYMENT_FETCH_TIMEOUT_MS, fetchWithTimeout } from "@/lib/fetch-with-timeout";
 
 const XDDPAY_GATEWAY = "https://gateway.xddpay.com";
 
@@ -91,11 +92,11 @@ export async function createPaymentOrder(params: {
   formData.append("extra", product.code);
   formData.append("sign", paySign);
 
-  const response = await fetch(`${XDDPAY_GATEWAY}?format=json`, {
+  const response = await fetchWithTimeout(`${XDDPAY_GATEWAY}?format=json`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: formData.toString(),
-  });
+  }, DEFAULT_PAYMENT_FETCH_TIMEOUT_MS);
   const text = await response.text();
   let data: Record<string, string>;
   try { data = JSON.parse(text); } catch { throw new Error("支付接口返回格式异常: " + text.slice(0, 200)); }

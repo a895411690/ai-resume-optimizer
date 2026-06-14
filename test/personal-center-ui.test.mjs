@@ -66,6 +66,17 @@ test("page does not keep selling VIP to users who already have unlimited optimiz
   assert.match(source, /已拥有永久 VIP/);
 });
 
+test("page tracks optimistic optimization deduction source and avoids double decrement in full flow", () => {
+  const source = readFileSync(new URL("../src/app/page.tsx", import.meta.url), "utf8");
+  const runFullFlow = source.match(/async function runFullFlow\(\) \{[\s\S]*?\n  \}/)?.[0] || "";
+
+  assert.match(source, /type OptimisticOptimizationDeduction = "vip" \| "credits" \| "free_once" \| "none"/);
+  assert.match(source, /function decrementLocalOptimizationCount\(\): OptimisticOptimizationDeduction/);
+  assert.match(source, /function rollbackLocalOptimizationCount\(source: OptimisticOptimizationDeduction\)/);
+  assert.doesNotMatch(runFullFlow, /decrementLocalOptimizationCount\(\)/);
+  assert.doesNotMatch(runFullFlow, /rollbackLocalOptimizationCount\(/);
+});
+
 test("AI API routes require authenticated users", () => {
   for (const route of [
     "../src/app/api/optimize/route.ts",

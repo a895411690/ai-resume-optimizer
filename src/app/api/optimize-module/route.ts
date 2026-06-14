@@ -8,6 +8,7 @@ import { chooseDeepSeekModel } from "@/lib/deepseek-model-router.js";
 import { normalizeStructuredResumeV1, renderStructuredResumeV1Markdown } from "@/lib/resume-schema.js";
 import { requireAuthenticatedUser } from "@/lib/api-auth";
 import { markAiUsageCompleted, markAiUsageFailed, reserveOptimizationAccess } from "@/lib/ai-access-control";
+import { DEFAULT_AI_FETCH_TIMEOUT_MS, fetchWithTimeout } from "@/lib/fetch-with-timeout";
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
@@ -44,7 +45,7 @@ const MODULE_OPTIMIZE_PROMPT = `你是一位资深简历优化专家，当前只
 }`;
 
 async function callDeepSeek(messages: Array<{ role: "system" | "user"; content: string }>, model: string) {
-  const response = await fetch(`${DEEPSEEK_BASE_URL}/v1/chat/completions`, {
+  const response = await fetchWithTimeout(`${DEEPSEEK_BASE_URL}/v1/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -57,7 +58,7 @@ async function callDeepSeek(messages: Array<{ role: "system" | "user"; content: 
       max_tokens: 3072,
       response_format: { type: "json_object" },
     }),
-  });
+  }, DEFAULT_AI_FETCH_TIMEOUT_MS);
 
   if (!response.ok) {
     const detail = await response.text();
@@ -66,6 +67,49 @@ async function callDeepSeek(messages: Array<{ role: "system" | "user"; content: 
 
   const data = await response.json();
   return data.choices?.[0]?.message?.content || "";
+}
+
+function hasContent(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(hasContent);
+  if (value && typeof value === "object") return Object.values(value).some(hasContent);
+  return typeof value === "string" ? value.trim().length > 0 : Boolean(value);
+}
+
+function mergeWithOriginal(original: unknown, candidate: unknown): unknown {
+  if (Array.isArray(candidate)) {
+    const originalItems = Array.isArray(original) ? original : [];
+    return candidate.map((item, index) => mergeWithOriginal(originalItems[index], item));
+  }
+  if (candidate && typeof candidate === "object") {
+    const originalRecord = original && typeof original === "object" && !Array.isArray(original)
+      ? original as Record<string, unknown>
+      : {};
+    const candidateRecord = candidate as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.entries(candidateRecord).map(([key, value]) => {
+        if (hasContent(value)) return [key, value];
+        return [key, originalRecord[key] ?? value];
+      }),
+    );
+  }
+  return hasContent(candidate) ? candidate : original;
+}
+
+function normalizeOptimizedModule(moduleName: string, value: unknown, originalModule: unknown) {
+  if (!value || typeof value !== "object") return null;
+
+  const originalResume = normalizeStructuredResumeV1({ [moduleName]: originalModule });
+  const candidateResume = normalizeStructuredResumeV1({ [moduleName]: value });
+  const original = (originalResume as Record<string, unknown>)[moduleName];
+  const candidate = (candidateResume as Record<string, unknown>)[moduleName];
+
+  if (!hasContent(candidate)) return null;
+
+  if (["education", "work", "projects"].includes(moduleName)) {
+    if (!Array.isArray(candidate) || candidate.length === 0) return null;
+  }
+
+  return mergeWithOriginal(original, candidate);
 }
 
 export async function POST(req: NextRequest) {
@@ -135,6 +179,13 @@ ${moduleMarkdown}`;
       return NextResponse.json({ error: "AI 返回格式无法解析，请稍后重试" }, { status: 502 });
     }
 
+    const normalizedModule = normalizeOptimizedModule(moduleName, parsed.optimizedModule, moduleData);
+    if (!normalizedModule) {
+      await markAiUsageFailed(usageEventId);
+      usageEventId = null;
+      return NextResponse.json({ error: "AI 返回模块结构无效，请稍后重试" }, { status: 502 });
+    }
+
     const optimization = normalizeOptimization(parsed, {
       markdown: moduleMarkdown,
       diagnosis: null,
@@ -145,7 +196,7 @@ ${moduleMarkdown}`;
     await markAiUsageCompleted(usageEventId);
     return NextResponse.json({
       module: moduleName,
-      optimizedModule: parsed.optimizedModule || moduleData,
+      optimizedModule: normalizedModule,
       optimization: {
         editSummary: optimization.editSummary,
         editExplanations: optimization.editExplanations,

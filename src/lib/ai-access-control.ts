@@ -3,10 +3,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export const DEMO_DAILY_DIAGNOSIS_LIMIT = 3;
+export const DEMO_DAILY_IMPORT_LIMIT = 3;
 
 const VIP_REQUIRED_MESSAGE = "优化次数已用完，请及时充值！";
 const DEMO_DIAGNOSIS_LIMIT_MESSAGE = "Demo 今日免费诊断次数已用完，请登录后继续使用。";
+const DEMO_IMPORT_LIMIT_MESSAGE = "Demo 今日免费导入次数已用完，请登录后继续使用。";
 const DEMO_CLIENT_REQUIRED_MESSAGE = "Demo 诊断需要有效的浏览器体验标识。";
+const DEMO_IMPORT_CLIENT_REQUIRED_MESSAGE = "Demo 导入需要有效的浏览器体验标识。";
 
 type AiAction = "diagnose" | "optimize" | "optimize_module";
 type EntitlementSource = "authenticated" | "demo_daily" | "free_once" | "vip" | "credits";
@@ -212,6 +215,38 @@ export async function reserveDemoDiagnosisAccess(req: NextRequest): Promise<Acce
     return {
       allowed: false,
       response: NextResponse.json({ error: DEMO_DIAGNOSIS_LIMIT_MESSAGE }, { status: 429 }),
+    };
+  }
+
+  return { allowed: true, eventId, entitlementSource: "demo_daily" };
+}
+
+export async function reserveDemoImportAccess(req: NextRequest): Promise<AccessReservation> {
+  const demoClientId = readDemoClientId(req);
+  if (!demoClientId) {
+    return {
+      allowed: false,
+      response: NextResponse.json({ error: DEMO_IMPORT_CLIENT_REQUIRED_MESSAGE }, { status: 400 }),
+    };
+  }
+
+  const admin = getSupabaseAdmin();
+  const usageDay = new Date().toISOString().slice(0, 10);
+  const ipHash = hashValue(readIp(req));
+  const clientHash = hashValue(demoClientId);
+
+  const { data: eventId, error } = await admin.rpc("reserve_demo_import", {
+    usage_day_input: usageDay,
+    ip_hash_input: ipHash,
+    client_hash_input: clientHash,
+    max_count: DEMO_DAILY_IMPORT_LIMIT,
+  });
+  if (error) throw new Error(error.message || "Demo 导入次数更新失败");
+
+  if (!eventId) {
+    return {
+      allowed: false,
+      response: NextResponse.json({ error: DEMO_IMPORT_LIMIT_MESSAGE }, { status: 429 }),
     };
   }
 

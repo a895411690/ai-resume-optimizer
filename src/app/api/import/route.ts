@@ -8,6 +8,8 @@ import { normalizeResumeMarkdown } from "@/lib/resume-formatting.js";
 import { safeParseJsonObject } from "@/lib/ai-resume-contract.js";
 import { normalizeStructuredResumeV1, renderStructuredResumeV1Markdown } from "@/lib/resume-schema.js";
 import { getOptionalAuthenticatedUser } from "@/lib/api-auth";
+import { reserveDemoImportAccess } from "@/lib/ai-access-control";
+import { DEFAULT_AI_FETCH_TIMEOUT_MS, fetchWithTimeout } from "@/lib/fetch-with-timeout";
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
@@ -16,10 +18,6 @@ const MAX_PDF_PAGES = 20;
 const MAX_EXTRACTED_TEXT_LENGTH = 100_000;
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : "解析失败";
-
-function readDemoClientId(req: NextRequest) {
-  return (req.headers.get("x-demo-client-id") || "").trim();
-}
 
 function installPdfNodePolyfills() {
   const globalScope = globalThis as Record<string, unknown>;
@@ -126,7 +124,7 @@ const EXTRACT_PROMPT = `你是简历信息抽取引擎。你必须输出严格 J
 
 async function callDeepSeekForExtraction(text: string) {
   if (!DEEPSEEK_API_KEY) return null;
-  const response = await fetch(`${DEEPSEEK_BASE_URL}/v1/chat/completions`, {
+  const response = await fetchWithTimeout(`${DEEPSEEK_BASE_URL}/v1/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -142,7 +140,7 @@ async function callDeepSeekForExtraction(text: string) {
       max_tokens: 4096,
       response_format: { type: "json_object" },
     }),
-  });
+  }, DEFAULT_AI_FETCH_TIMEOUT_MS);
 
   if (!response.ok) return null;
   const data = await response.json();
@@ -193,8 +191,10 @@ export async function POST(req: NextRequest) {
   try {
     const auth = await getOptionalAuthenticatedUser(req);
     if ("response" in auth) return auth.response;
-    if (!auth.user && !readDemoClientId(req)) {
-      return NextResponse.json({ error: "导入简历需要登录或有效的 Demo 体验标识。" }, { status: 400 });
+    if (!auth.user) {
+      // reserveDemoImportAccess validates x-demo-client-id and applies the daily demo import limit.
+      const demoAccess = await reserveDemoImportAccess(req);
+      if (!demoAccess.allowed) return demoAccess.response;
     }
 
     const formData = await req.formData();

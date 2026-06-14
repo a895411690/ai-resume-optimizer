@@ -47,7 +47,9 @@ test("AI access control reserves optimization access and supports demo diagnosis
   const source = readFileSync(new URL("../src/lib/ai-access-control.ts", import.meta.url), "utf8");
 
   assert.match(source, /DEMO_DAILY_DIAGNOSIS_LIMIT = 3/);
+  assert.match(source, /DEMO_DAILY_IMPORT_LIMIT = 3/);
   assert.match(source, /reserveDemoDiagnosisAccess/);
+  assert.match(source, /reserveDemoImportAccess/);
   assert.match(source, /optimization_credits/);
   assert.match(source, /lifetime_vip/);  assert.match(source, /reserveOptimizationAccess/);
   assert.match(source, /free_optimization_used/);
@@ -62,8 +64,31 @@ test("AI access control uses atomic RPCs for credit and demo reservations", () =
   assert.match(source, /admin\.rpc\("reserve_optimization_credit"/);
   assert.match(source, /admin\.rpc\("refund_optimization_credit"/);
   assert.match(source, /admin\.rpc\("reserve_demo_diagnosis"/);
+  assert.match(source, /admin\.rpc\("reserve_demo_import"/);
   assert.doesNotMatch(source, /optimization_credits: entitlement\.optimizationCredits - 1/);
   assert.doesNotMatch(source, /diagnosis_count: currentCount \+ 1/);
+});
+
+test("Supabase migration moves privileged RPC implementations into a private schema", () => {
+  const migration = readFileSync(new URL("../supabase/migrations/20260614000000_harden_demo_import_and_private_rpcs.sql", import.meta.url), "utf8");
+
+  assert.match(migration, /CREATE SCHEMA IF NOT EXISTS private/);
+  assert.match(migration, /REVOKE ALL ON SCHEMA private FROM PUBLIC, anon, authenticated/);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.demo_import_usage_daily/);
+  assert.match(migration, /ALTER TABLE public\.demo_import_usage_daily ENABLE ROW LEVEL SECURITY/);
+
+  for (const functionName of [
+    "reserve_optimization_credit",
+    "refund_optimization_credit",
+    "reserve_demo_diagnosis",
+    "reserve_demo_import",
+    "finalize_payment_order",
+  ]) {
+    assert.match(migration, new RegExp(`CREATE OR REPLACE FUNCTION private\\.${functionName}`));
+    assert.match(migration, new RegExp(`CREATE OR REPLACE FUNCTION public\\.${functionName}`));
+    assert.match(migration, new RegExp(`REVOKE EXECUTE ON FUNCTION public\\.${functionName}`));
+    assert.match(migration, new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${functionName}`));
+  }
 });
 
 test("payment routes use atomic finalization and migration supports product grants", () => {

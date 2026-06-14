@@ -8,6 +8,7 @@ import {
   recommendResumeTemplates,
 } from "@/lib/resume-template-recommendation.js";
 import { requireAuthenticatedUser } from "@/lib/api-auth";
+import { DEFAULT_AI_FETCH_TIMEOUT_MS, fetchWithTimeout } from "@/lib/fetch-with-timeout";
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
@@ -28,7 +29,7 @@ const TEMPLATE_RECOMMEND_PROMPT = `你是一位资深简历顾问和排版顾问
 }`;
 
 async function callDeepSeek(messages: Array<{ role: "system" | "user"; content: string }>, model: string) {
-  const response = await fetch(`${DEEPSEEK_BASE_URL}/v1/chat/completions`, {
+  const response = await fetchWithTimeout(`${DEEPSEEK_BASE_URL}/v1/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -41,7 +42,7 @@ async function callDeepSeek(messages: Array<{ role: "system" | "user"; content: 
       max_tokens: 2048,
       response_format: { type: "json_object" },
     }),
-  });
+  }, DEFAULT_AI_FETCH_TIMEOUT_MS);
 
   if (!response.ok) {
     const detail = await response.text();

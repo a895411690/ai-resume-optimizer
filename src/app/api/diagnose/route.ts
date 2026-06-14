@@ -9,6 +9,7 @@ import { chooseDeepSeekModel } from "@/lib/deepseek-model-router.js";
 import { normalizeStructuredResumeV1, renderStructuredResumeV1Markdown } from "@/lib/resume-schema.js";
 import { getOptionalAuthenticatedUser } from "@/lib/api-auth";
 import { reserveDemoDiagnosisAccess } from "@/lib/ai-access-control";
+import { DEFAULT_AI_FETCH_TIMEOUT_MS, fetchWithTimeout } from "@/lib/fetch-with-timeout";
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
@@ -80,7 +81,7 @@ const DIAGNOSE_PROMPT = `你是一位资深 HR、招聘经理和简历评审专�
 }`;
 
 async function callDeepSeek(messages: Array<{ role: "system" | "user"; content: string }>, model: string) {
-  const response = await fetch(`${DEEPSEEK_BASE_URL}/v1/chat/completions`, {
+  const response = await fetchWithTimeout(`${DEEPSEEK_BASE_URL}/v1/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -93,7 +94,7 @@ async function callDeepSeek(messages: Array<{ role: "system" | "user"; content: 
       max_tokens: 3072,
       response_format: { type: "json_object" },
     }),
-  });
+  }, DEFAULT_AI_FETCH_TIMEOUT_MS);
 
   if (!response.ok) {
     const detail = await response.text();
