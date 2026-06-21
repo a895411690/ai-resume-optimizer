@@ -8,6 +8,12 @@ test("Docker build excludes secret env files from the image context", () => {
   assert.match(dockerignore, /^\.env\*$/m);
 });
 
+test("Git ignores local Superpowers session artifacts", () => {
+  const gitignore = readFileSync(new URL("../.gitignore", import.meta.url), "utf8");
+
+  assert.match(gitignore, /^\.superpowers\/$/m);
+});
+
 test("Dockerfile passes only public Supabase env at build time", () => {
   const dockerfile = readFileSync(new URL("../Dockerfile", import.meta.url), "utf8");
 

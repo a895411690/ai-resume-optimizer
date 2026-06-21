@@ -10,6 +10,7 @@ const DEMO_DIAGNOSIS_LIMIT_MESSAGE = "Demo 今日免费诊断次数已用完，�
 const DEMO_IMPORT_LIMIT_MESSAGE = "Demo 今日免费导入次数已用完，请登录后继续使用。";
 const DEMO_CLIENT_REQUIRED_MESSAGE = "Demo 诊断需要有效的浏览器体验标识。";
 const DEMO_IMPORT_CLIENT_REQUIRED_MESSAGE = "Demo 导入需要有效的浏览器体验标识。";
+const TRUSTED_CLIENT_IP_HEADER = "x-real-ip";
 
 type AiAction = "diagnose" | "optimize" | "optimize_module";
 type EntitlementSource = "authenticated" | "demo_daily" | "free_once" | "vip" | "credits";
@@ -40,8 +41,7 @@ function hashValue(value: string) {
 }
 
 function readIp(req: NextRequest) {
-  const forwarded = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return forwarded || req.headers.get("x-real-ip") || "unknown";
+  return req.headers.get(TRUSTED_CLIENT_IP_HEADER)?.trim() || "unknown";
 }
 
 function readDemoClientId(req: NextRequest) {

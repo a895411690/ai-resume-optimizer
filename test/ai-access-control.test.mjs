@@ -69,6 +69,14 @@ test("AI access control uses atomic RPCs for credit and demo reservations", () =
   assert.doesNotMatch(source, /diagnosis_count: currentCount \+ 1/);
 });
 
+test("demo access hashes a proxy-controlled client IP instead of trusting spoofable forwarded headers", () => {
+  const source = readFileSync(new URL("../src/lib/ai-access-control.ts", import.meta.url), "utf8");
+
+  assert.match(source, /const TRUSTED_CLIENT_IP_HEADER = "x-real-ip"/);
+  assert.match(source, /req\.headers\.get\(TRUSTED_CLIENT_IP_HEADER\)/);
+  assert.doesNotMatch(source, /headers\.get\("x-forwarded-for"\)/);
+});
+
 test("Supabase migration moves privileged RPC implementations into a private schema", () => {
   const migration = readFileSync(new URL("../supabase/migrations/20260614000000_harden_demo_import_and_private_rpcs.sql", import.meta.url), "utf8");
 

@@ -16,6 +16,8 @@ test("external API calls use the shared timeout wrapper", () => {
 
   assert.match(helper, /export async function fetchWithTimeout/);
   assert.match(helper, /AbortController/);
+  assert.match(helper, /function combineAbortSignals/);
+  assert.match(helper, /init\.signal/);
   assert.match(helper, /DEFAULT_AI_FETCH_TIMEOUT_MS = 60_000/);
   assert.match(helper, /DEFAULT_PAYMENT_FETCH_TIMEOUT_MS = 15_000/);
 

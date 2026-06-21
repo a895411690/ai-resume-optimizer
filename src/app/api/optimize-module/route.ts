@@ -76,9 +76,14 @@ function hasContent(value: unknown): boolean {
 }
 
 function mergeWithOriginal(original: unknown, candidate: unknown): unknown {
-  if (Array.isArray(candidate)) {
+  if (Array.isArray(candidate) || Array.isArray(original)) {
     const originalItems = Array.isArray(original) ? original : [];
-    return candidate.map((item, index) => mergeWithOriginal(originalItems[index], item));
+    const candidateItems = Array.isArray(candidate) ? candidate : [];
+    const length = Math.max(originalItems.length, candidateItems.length);
+    return Array.from({ length }, (_, index) => {
+      if (index >= candidateItems.length) return originalItems[index];
+      return mergeWithOriginal(originalItems[index], candidateItems[index]);
+    }).filter((item) => item !== undefined);
   }
   if (candidate && typeof candidate === "object") {
     const originalRecord = original && typeof original === "object" && !Array.isArray(original)

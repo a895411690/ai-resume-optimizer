@@ -13,3 +13,11 @@ test("module optimization validates model output before returning it", () => {
   assert.doesNotMatch(route, /optimizedModule: parsed\.optimizedModule \|\| moduleData/);
   assert.match(page, /normalizeStructuredResumeV1\(\{ \.\.\.resume\.structuredResume, \[moduleName\]: data\.optimizedModule \}\)/);
 });
+
+test("module optimization preserves original array items when model returns a partial list", () => {
+  const route = readFileSync(new URL("../src/app/api/optimize-module/route.ts", import.meta.url), "utf8");
+
+  assert.match(route, /Math\.max\(originalItems\.length, candidateItems\.length\)/);
+  assert.match(route, /if \(index >= candidateItems\.length\) return originalItems\[index\]/);
+  assert.doesNotMatch(route, /return candidate\.map\(\(item, index\) => mergeWithOriginal\(originalItems\[index\], item\)\)/);
+});
